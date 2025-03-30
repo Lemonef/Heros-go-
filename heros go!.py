@@ -19,23 +19,33 @@ pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Battle Heroes Defense")
 
-# Placeholder Assets
-hero_imgs = {
-    "Archer": pygame.Surface((40, 40)),
-    "Warrior": pygame.Surface((40, 40)),
-    "Mage": pygame.Surface((40, 40)),
-    "Tank": pygame.Surface((40, 40)),
-    "Healer": pygame.Surface((40, 40))
+def load_sprite_sheet(path, frame_width, frame_height):
+    sheet = pygame.image.load(path).convert_alpha()
+    frames = []
+    for i in range(sheet.get_width() // frame_width):
+        frame = sheet.subsurface(pygame.Rect(i * frame_width, 0, frame_width, frame_height))
+        frames.append(frame)
+    return frames
+
+hero_sprites = {
+    "Archer": load_sprite_sheet("assets/archer.png", 40, 40),
+    "Warrior": load_sprite_sheet("assets/warrior.png", 40, 40),
+    "Mage": load_sprite_sheet("assets/mage.png", 40, 40),
+    "Tank": load_sprite_sheet("assets/tank.png", 40, 40),
+    "Healer": load_sprite_sheet("assets/healer.png", 40, 40),
 }
-hero_imgs["Archer"].fill(YELLOW)
-hero_imgs["Warrior"].fill(BLUE)
-hero_imgs["Mage"].fill(PURPLE)
-hero_imgs["Tank"].fill(GRAY)
-hero_imgs["Healer"].fill(GREEN)
+
 
 enemy_img = pygame.Surface((40, 40))
 enemy_img.fill(RED)
 
+class Attack:
+    def __init__(self):
+        pass
+    def skill(self):
+        pass
+    def normal_attack(self):
+        pass
 
 # Character Base Class
 class Character:
@@ -51,9 +61,10 @@ class Character:
             self.x += self.speed
 
 # Enemy Class
+# make the enemy stop when face in front of a hero, attack when cooldown is over
 class Enemy(Character):
     def __init__(self):
-        super().__init__(SCREEN_WIDTH - 50, SCREEN_HEIGHT // 2, 30, -1.5)
+        super().__init__(SCREEN_WIDTH - 50, SCREEN_HEIGHT // 2, 1, -1.5)
         self.attack = 5
 
     def attack_hero(self, hero):
@@ -74,35 +85,49 @@ class Hero(Character):
         self.attack_cooldown = 1
         self.last_attack = 0
 
+        self.frames = hero_sprites[self.name]
+        self.current_frame = 0
+        self.last_frame_time = time.time()
+        self.frame_interval = 0.1  # seconds per frame
+
+    def update_animation(self):
+        if time.time() - self.last_frame_time > self.frame_interval:
+            self.current_frame = (self.current_frame + 1) % len(self.frames)
+            self.last_frame_time = time.time()
+
+    def draw(self, screenene):
+        if self.alive:
+            self.update_animation()
+            screen.blit(self.frames[self.current_frame], (self.x, self.y))
+            
     def can_attack(self):
         return time.time() - self.last_attack >= self.attack_cooldown
-
-    def draw(self, screen):
-        if self.alive:
-            screen.blit(hero_imgs[self.name], (self.x, self.y))
 
 # Archer
 class Archer(Hero):
     def __init__(self):
         super().__init__("Archer", 60, 2)
         self.attack = 5
-        self.attack_range = 100
+        self.attack_range = 500
         self.attack_cooldown = 0.5
 
     def update(self, enemies):
-        self.move()
         for enemy in enemies:
-            if abs(self.x - enemy.x) <= self.attack_range and self.can_attack():
-                enemy.health -= self.attack
-                if enemy.health <= 0:
-                    enemy.alive = False
-                self.last_attack = time.time()
-                break
-
+            if abs(self.x - enemy.x) <= self.attack_range:
+                if self.can_attack():
+                    for e in enemies:
+                        if abs(self.x - e.x) <= 500:
+                            e.health -= self.attack
+                            if e.health <= 0:
+                                e.alive = False
+                    self.last_attack = time.time()
+                return
+        self.move()
+        
 # Warrior
 class Warrior(Hero):
     def __init__(self):
-        super().__init__("Warrior", 150, 1.5)
+        super().__init__("Warrior", 150, 2)
         self.attack = 15
         self.attack_range = 40
         self.attack_cooldown = 1.5
@@ -120,17 +145,19 @@ class Warrior(Hero):
 # Mage
 class Mage(Hero):
     def __init__(self):
-        super().__init__("Mage", 80, 1.2)
+        super().__init__("Mage", 80, 1)
         self.attack = 10
-        self.attack_range = 120
+        self.attack_range = 350
         self.attack_cooldown = 2
 
+    
+    # change to only attack the front until it dies
     def update(self, enemies):
         for enemy in enemies:
             if abs(self.x - enemy.x) <= self.attack_range:
                 if self.can_attack():
                     for e in enemies:
-                        if abs(self.x - e.x) <= 50:
+                        if abs(self.x - e.x) <= 400:
                             e.health -= self.attack
                             if e.health <= 0:
                                 e.alive = False
@@ -141,7 +168,7 @@ class Mage(Hero):
 # Tank
 class Tank(Hero):
     def __init__(self):
-        super().__init__("Tank", 300, 1)
+        super().__init__("Tank", 300, 2)
         self.attack = 0
 
     def update(self, enemies):
@@ -200,7 +227,7 @@ class HeroButton:
         self.cost = cost
         self.cooldown = cooldown
         self.last_pressed = 0
-        self.rect = pygame.Rect(x, SCREEN_HEIGHT - 50, 60, 30)
+        self.rect = pygame.Rect(x, SCREEN_HEIGHT - 50, 70, 30)
 
     def is_ready(self):
         return time.time() - self.last_pressed >= self.cooldown
@@ -209,7 +236,7 @@ class HeroButton:
         color = GREEN if self.is_ready() and res_mgr.can_afford(self.cost) else RED
         pygame.draw.rect(screen, color, self.rect)
         label = font.render(self.hero_type.__name__, True, BLACK)
-        screen.blit(label, (self.x + 5, SCREEN_HEIGHT - 45))
+        screen.blit(label, (self.x + 7.5, SCREEN_HEIGHT - 45))
 
     def try_spawn(self, game):
         if self.is_ready() and game.res_mgr.can_afford(self.cost):
@@ -314,3 +341,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
+    
+    
+# don't have skill but each character attack with different patterns
+# have normal attack for each character, also have individual skill. maybe like mage got a skill that enemy in range got 50% less hp
+# Mage also attack in aoe like 100 block in front of it
+# enemy need to stop if its in front of our character as well as our character stop if its in front of the enemy. like if mage is at the 50 range from the enemy it stop, tank if its in front it stops, and enemy stop too and attack. No body move unless the all the front character dies so it move up to the range again
+# add walking animation
