@@ -36,7 +36,7 @@ enemy_img = pygame.Surface((40, 40))
 enemy_img.fill(RED)
 
 class Attack:
-    def __init__(self, damage, cooldown, skill_damage=None, skill_cooldown=None, skill_chance=0.5):
+    def __init__(self, damage, cooldown, skill_damage=None, skill_cooldown=None, skill_chance=0.6):
         self.damage = damage
         self.cooldown = cooldown
         self.last_attack_time = 0
@@ -59,7 +59,7 @@ class Attack:
                 target.alive = False
             self.last_attack_time = time.time()
 
-    def use_skill(self, targets):
+    def use_attack_skill(self, targets):
         if self.can_use_skill():
             for target in targets:
                 target.health -= self.skill_damage
@@ -124,7 +124,7 @@ class Archer(Hero):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
         if in_range:
             self.attack.normal_attack(in_range[0])
-            self.attack.use_skill(in_range)
+            self.attack.use_attack_skill(in_range)
         else:
             self.move()
 
@@ -137,7 +137,7 @@ class Warrior(Hero):
         for enemy in enemies:
             if abs(self.x - enemy.x) <= self.attack_range:
                 self.attack.normal_attack(enemy)
-                self.attack.use_skill([enemy])
+                self.attack.use_attack_skill([enemy])
                 return
         self.move()
 
@@ -152,7 +152,7 @@ class Mage(Hero):
             self.attack.normal_attack(in_range[0])
             # Mage skill: deal AOE damage to enemies within 100 px
             aoe_targets = [e for e in enemies if abs(self.x - e.x) <= 100 and e.alive]
-            self.attack.use_skill(aoe_targets)
+            self.attack.use_attack_skill(aoe_targets)
         else:
             self.move()
 
@@ -204,7 +204,8 @@ class ResourceManager:
         self.energy -= amount
 
     def regenerate(self):
-        self.energy += 2
+        if self.energy < 500:
+            self.energy += 1
 
 class HeroButton:
     def __init__(self, x, hero_type, cost, cooldown):
