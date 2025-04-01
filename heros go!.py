@@ -42,17 +42,33 @@ def load_sprite_sheet_by_row(path, frame_width, frame_height):
         animations[name] = frames
     return animations
 
-screen_mgr = ScreenManager()
-# Hero sprites (use your assets folder)
-hero_sprites = {
-    name: load_sprite_sheet_by_row("Heros-go-/assets/temp_spritesheet.png", 40, 40)
-    for name in ["Archer", "Warrior", "Mage", "Tank", "Healer"]
-}
+class AnimationManager:
+    @staticmethod
+    def load_sprite_sheet_by_row(path, frame_width, frame_height):
+        sheet = pygame.image.load(path).convert_alpha()
+        rows = sheet.get_height() // frame_height
+        cols = sheet.get_width() // frame_width
+        animations = {}
+        for row, name in enumerate(["move", "attack", "skill"]):
+            frames = []
+            for col in range(cols):
+                frame = sheet.subsurface(pygame.Rect(col * frame_width, row * frame_height, frame_width, frame_height))
+                frames.append(frame)
+            animations[name] = frames
+        return animations
 
+    @staticmethod
+    def load_hero_sprites():
+        return {
+            name: AnimationManager.load_sprite_sheet_by_row("Heros-go-/assets/temp_spritesheet.png", 40, 40)
+            for name in ["Archer", "Warrior", "Mage", "Tank", "Healer"]
+        }
 
-
-enemy_img = pygame.Surface((40, 40))
-enemy_img.fill(ScreenManager.RED)
+    @staticmethod
+    def create_enemy_surface():
+        surface = pygame.Surface((40, 40))
+        surface.fill(ScreenManager.RED)
+        return surface
 
 class Animation:
     def __init__(self, frames, interval=0.1):
@@ -183,8 +199,8 @@ class Hero(Character):
         self.current_state = "move"
 
 class Mage(Hero):
-    def __init__(self):
-        super().__init__("Mage", 80, 1, 10, 1, hero_sprites["Mage"], Skill("AOE", 3, AreaDamageEffect(), 0.6))
+    def __init__(self, sprites):
+        super().__init__("Mage", 80, 1, 10, 1, sprites["Mage"], Skill("AOE", 3, AreaDamageEffect(), 0.6))
         self.attack_range = 350
 
     def update(self, enemies):
@@ -197,8 +213,8 @@ class Mage(Hero):
             self.move()
 
 class Archer(Hero):
-    def __init__(self):
-        super().__init__("Archer", 60, 2, 5, 0.5, hero_sprites["Archer"], Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4))
+    def __init__(self, sprites):
+        super().__init__("Archer", 60, 2, 5, 0.5, sprites["Archer"], Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4))
         self.attack_range = 500
 
     def update(self, enemies):
@@ -211,8 +227,8 @@ class Archer(Hero):
             self.move()
 
 class Warrior(Hero):
-    def __init__(self):
-        super().__init__("Warrior", 150, 2, 15, 1.5, hero_sprites["Warrior"], None)
+    def __init__(self, sprites):
+        super().__init__("Warrior", 150, 2, 15, 1.5, sprites["Warrior"], None)
         self.attack_range = 40
 
     def update(self, enemies):
@@ -224,8 +240,8 @@ class Warrior(Hero):
         self.move()
 
 class Tank(Hero):
-    def __init__(self):
-        super().__init__("Tank", 300, 2, 0, 1, hero_sprites["Tank"], Skill("Shield", 6, ShieldEffect(), 0.8))
+    def __init__(self, sprites):
+        super().__init__("Tank", 300, 2, 0, 1, sprites["Tank"], Skill("Shield", 6, ShieldEffect(), 0.8))
 
     def update(self, enemies):
         close_enemies = [e for e in enemies if abs(self.x - e.x) < 40 and e.alive]
@@ -236,8 +252,8 @@ class Tank(Hero):
             self.move()
 
 class Healer(Hero):
-    def __init__(self):
-        super().__init__("Healer", 70, 1.5, 0, 1, hero_sprites["Healer"], Skill("Group Heal", 5, GroupHealEffect(), 1.0))
+    def __init__(self, sprites):
+        super().__init__("Healer", 70, 1.5, 0, 1, sprites["Healer"], Skill("Group Heal", 5, GroupHealEffect(), 1.0))
         self.heal_range = 100
 
     def update(self, heroes):
@@ -253,9 +269,10 @@ class Healer(Hero):
             self.move()
 
 class Enemy(Character):
-    def __init__(self):
+    def __init__(self, image):
         super().__init__(ScreenManager.WIDTH - 50, ScreenManager.HEIGHT // 2, 30, -1.5)
         self.attack = Attack(5, 1)
+        self.image = image
 
     def update(self, heroes):
         for hero in heroes:
@@ -266,7 +283,7 @@ class Enemy(Character):
 
     def draw(self, surface):
         if self.alive:
-            surface.blit(enemy_img, (self.x, self.y))
+            surface.blit(self.image, (self.x, self.y))
 
 class Base:
     def __init__(self, x, color):
@@ -313,19 +330,22 @@ class HeroButton:
 
     def try_spawn(self, game):
         if self.is_ready() and game.res_mgr.can_afford(self.cost):
-            hero = self.hero_type()
+            hero = game.create_hero(self.hero_type)
             game.heroes.append(hero)
             game.res_mgr.spend(self.cost)
             self.last_pressed = time.time()
 
 class GameManager:
     def __init__(self):
+        screen_mgr = ScreenManager()
         self.screen_mgr = screen_mgr
         self.player_base = Base(10, ScreenManager.GREEN)
         self.enemy_base = Base(ScreenManager.WIDTH - 60, ScreenManager.RED)
         self.heroes = []
         self.enemies = []
         self.res_mgr = ResourceManager()
+        self.hero_sprites = AnimationManager.load_hero_sprites()
+        self.enemy_img = AnimationManager.create_enemy_surface()
         self.hero_buttons = [
             HeroButton(100, Archer, 10, 1),
             HeroButton(180, Warrior, 15, 2),
@@ -335,9 +355,13 @@ class GameManager:
         ]
         self.running = True
 
+
     def spawn_enemy(self):
         if random.randint(1, 100) > 98:
-            self.enemies.append(Enemy())
+            self.enemies.append(Enemy(self.enemy_img))
+            
+    def create_hero(self, hero_class):
+        return hero_class(self.hero_sprites)
 
     def update(self):
         for hero in self.heroes:
@@ -388,6 +412,7 @@ class GameManager:
         energy_text = font.render(f"Energy: {int(self.res_mgr.energy)}", True, ScreenManager.BLACK)
         self.screen_mgr.surface.blit(energy_text, (10, 10))
         self.screen_mgr.update()
+
 
 def main():
     game = GameManager()
