@@ -28,20 +28,6 @@ class ScreenManager:
     def quit(self):
         pygame.quit()
 
-# Sprite sheet loader
-def load_sprite_sheet_by_row(path, frame_width, frame_height):
-    sheet = pygame.image.load(path).convert_alpha()
-    rows = sheet.get_height() // frame_height
-    cols = sheet.get_width() // frame_width
-    animations = {}
-    for row, name in enumerate(["move", "attack", "skill"]):
-        frames = []
-        for col in range(cols):
-            frame = sheet.subsurface(pygame.Rect(col * frame_width, row * frame_height, frame_width, frame_height))
-            frames.append(frame)
-        animations[name] = frames
-    return animations
-
 class AnimationManager:
     @staticmethod
     def load_sprite_sheet_by_row(path, frame_width, frame_height):
@@ -214,7 +200,7 @@ class Mage(Hero):
 
 class Archer(Hero):
     def __init__(self, sprites):
-        super().__init__("Archer", 60, 2, 5, 0.5, sprites["Archer"], Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4))
+        super().__init__("Archer", 60, 2, 5, 0.1, sprites["Archer"], Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4))
         self.attack_range = 500
 
     def update(self, enemies):
