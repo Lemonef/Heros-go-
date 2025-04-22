@@ -93,9 +93,64 @@ class Attack:
             target.health -= self.dmg
             target.alive = target.health > 0
             self.last_time = time.time()
+    
+class SkillEffect:
+    def apply(self, user, targets):
+        pass
+
+class AreaDamageEffect(SkillEffect):
+    def __init__(self, radius=100, damage=20):
+        self.radius = radius
+        self.damage = damage
+
+    def apply(self, user, targets):
+        for t in targets:
+            if abs(user.x - t.x) <= self.radius and t.alive:
+                t.health -= self.damage
+                if t.health <= 0:
+                    t.alive = False
+
+class BuffAttackSpeedEffect(SkillEffect):
+    def apply(self, user, targets):
+        print("Buffing ally attack speed (placeholder)")
+
+class ShieldEffect(SkillEffect):
+    def apply(self, user, targets):
+        print("Shield applied (placeholder)")
+
+class GroupHealEffect(SkillEffect):
+    def __init__(self, heal_amount=15):
+        self.heal_amount = heal_amount
+
+    def apply(self, user, targets):
+        for t in targets:
+            if t.alive and t.health < t.max_health:
+                t.health += self.heal_amount
+                if t.health > t.max_health:
+                    t.health = t.max_health
+        print("healing allies (placeholder)")
+
+class Skill:
+    def __init__(self, name, skill_cooldown, effect: SkillEffect, skill_chance=1.0, cast_duration=0.3):
+        self.name = name
+        self.skill_cooldown = skill_cooldown
+        self.effect = effect
+        self.skill_chance = skill_chance
+        self.cast_duration = cast_duration
+        self.last_used_time = 0
+
+    def can_use_skill(self):
+        cooldown_ready = time.time() - self.last_used_time >= self.skill_cooldown
+        chance_roll = random.random() < self.skill_chance
+        return cooldown_ready and chance_roll
+
+    def use(self, user, targets):
+        if self.can_use_skill():
+            self.effect.apply(user, targets)
+            self.last_used_time = time.time()
 
 class Hero(Character):
-    def __init__(self, name, health, speed, dmg, atk_cd, anims):
+    def __init__(self, name, health, speed, dmg, atk_cd, anims, skill=None):
         sprite_height = anims["move"][0].get_height()
         y = (ScreenManager.HEIGHT // 2 + 50) - sprite_height
         center_x = 50
@@ -104,9 +159,18 @@ class Hero(Character):
         self.attack = Attack(dmg, atk_cd)
         self.animations = {k: Animation(v) for k, v in anims.items()}
         self.current_state = "move"
+        self.skill = skill
+        self.skill_anim_start_time = 0
+        self.skill_anim_duration = 0
 
 
     def update_animation(self):
+        if self.current_state == "skill":
+            elapsed = time.time() - self.skill_anim_start_time 
+            if elapsed >= self.skill_anim_duration:
+                self.reset_state() 
+                print(f"Skill animation completed after {elapsed} seconds")
+
         if self.current_state in self.animations:
             self.animations[self.current_state].update()
 
@@ -120,9 +184,17 @@ class Hero(Character):
         if self.attack.can_attack():
             self.current_state = "attack"
             self.attack.attack_target(target)
+        
+    def try_skill(self, targets):
+        if self.skill and self.skill.can_use_skill():
+            self.current_state = "skill"
+            self.skill.use(self, targets)
+            self.skill_anim_start_time = time.time()
+            self.skill_anim_duration = self.skill.cast_duration
 
     def reset_state(self):
-        self.current_state = "move"
+        if self.current_state != "skill": 
+            self.current_state = "move"
 
     def update(self, enemies):
         for e in enemies:
@@ -135,13 +207,20 @@ class Hero(Character):
 
 class Archer(Hero):
     def __init__(self, sprites):
-        super().__init__("Archer", 60, 2, 5, 0.5, sprites["Archer"])
+        super().__init__(
+            "Archer", 60, 2, 10, 0.5, sprites["Archer"],
+            Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4)
+        )
         self.attack_range = 500
+        self.buff_range = 150
 
-    def update(self, enemies):
+    def update(self, enemies, allies):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
+        nearby_allies = [a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.buff_range]
+
         if in_range:
             self.try_attack(in_range[0])
+            self.try_skill(nearby_allies)
         else:
             self.reset_state()
             self.move()
@@ -161,41 +240,84 @@ class Warrior(Hero):
 
 class Mage(Hero):
     def __init__(self, sprites):
-        super().__init__("Mage", 80, 1, 10, 1, sprites["Mage"])
+        super().__init__(
+            "Mage", 80, 1, 10, 1, sprites["Mage"],
+            Skill("AOE", 3, AreaDamageEffect(), 0.6)
+        )
         self.attack_range = 350
 
     def update(self, enemies):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
         if in_range:
             self.try_attack(in_range[0])
+            self.try_skill(enemies)
         else:
             self.reset_state()
             self.move()
 
 class Tank(Hero):
     def __init__(self, sprites):
-        super().__init__("Tank", 300, 2, 0, 1, sprites["Tank"])
+        super().__init__(
+            "Tank", 300, 2, 0, 1, sprites["Tank"],
+            Skill("Shield", 6, ShieldEffect(), 0.8)
+        )
+        self.attack_range = 40
+        self.shield_trigger_range = 150
 
-    def update(self, enemies):
-        close = [e for e in enemies if abs(self.x - e.x) < 40 and e.alive]
-        if not close:
+class Tank(Hero):
+    def __init__(self, sprites):
+        super().__init__(
+            "Tank", 300, 2, 0, 1, sprites["Tank"],
+            Skill("Shield", 6, ShieldEffect(), 0.8)
+        )
+        self.attack_range = 40
+        self.shield_trigger_range = 150
+
+    def reset_state(self):
+        self.current_state = "move"
+
+    def update(self, enemies, allies):
+        enemies_nearby = any(e.alive and abs(self.x - e.x) <= self.shield_trigger_range for e in enemies)
+
+        if self.current_state == "skill":
+            elapsed = time.time() - self.skill_anim_start_time
+            if elapsed >= self.skill_anim_duration:
+                self.reset_state()
+            return
+
+        if self.skill and enemies_nearby and self.skill.can_use_skill():
+            self.current_state = "skill"
+            self.skill.use(self, allies)
+            self.skill_anim_start_time = time.time()
+            self.skill_anim_duration = self.skill.cast_duration
+            return
+
+        if any(e.alive and abs(self.x - e.x) <= self.attack_range for e in enemies):
             self.reset_state()
-            self.move()
+            return
+
+        self.reset_state()
+        self.move()
 
 class Healer(Hero):
     def __init__(self, sprites):
-        super().__init__("Healer", 70, 1.5, 0, 1, sprites["Healer"])
-        self.heal_range = 100
+        super().__init__(
+            "Healer", 70, 1.5, 3, 1, sprites["Healer"],
+            Skill("Group Heal", 5, GroupHealEffect(), 1.0, cast_duration=1.5)
+        )
+        self.attack_range = 200
+        self.heal_range = 150
 
-    def update(self, allies):
-        near = [a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.heal_range and a.health < a.max_health]
-        if near:
-            # placeholder: heal logic
-            near[0].health = min(near[0].max_health, near[0].health + 5)
+    def update(self, enemies, allies):
+        in_range = [e for e in enemies if e.alive and abs(self.x - e.x) <= self.attack_range]
+        nearby_allies = [a for a in allies if a != self and a.alive and a.health < a.max_health and abs(self.x - a.x) <= self.heal_range]
+
+        if in_range:
+            self.try_attack(in_range[0])
+            self.try_skill(nearby_allies)
         else:
             self.reset_state()
             self.move()
-
 
 class Enemy(Character):
     def __init__(self, image):
@@ -299,7 +421,10 @@ class GameManager:
 
     def update(self):
         for h in self.heroes:
-            h.update(self.enemies)
+            if isinstance(h, (Healer, Archer, Tank)):
+                h.update(self.enemies, self.heroes)
+            else:
+                h.update(self.enemies)
         for e in self.enemies:
             e.update(self.heroes)
         self.heroes = [h for h in self.heroes if h.alive]
