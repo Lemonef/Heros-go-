@@ -98,7 +98,8 @@ class Hero(Character):
     def __init__(self, name, health, speed, dmg, atk_cd, anims):
         sprite_height = anims["move"][0].get_height()
         y = (ScreenManager.HEIGHT // 2 + 50) - sprite_height
-        super().__init__(50, y, health, speed)
+        center_x = 50
+        super().__init__(center_x, y , health, speed)
         self.name = name
         self.attack = Attack(dmg, atk_cd)
         self.animations = {k: Animation(v) for k, v in anims.items()}
@@ -113,7 +114,7 @@ class Hero(Character):
         if self.alive and self.current_state in self.animations:
             self.update_animation()
             frame = self.animations[self.current_state].get_frame()
-            surface.blit(frame, (self.x, self.y))
+            surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
 
     def try_attack(self, target):
         if self.attack.can_attack():
@@ -130,7 +131,8 @@ class Hero(Character):
                 return
         self.reset_state()
         self.move()
-        
+
+
 class Archer(Hero):
     def __init__(self, sprites):
         super().__init__("Archer", 60, 2, 5, 0.5, sprites["Archer"])
@@ -150,12 +152,12 @@ class Warrior(Hero):
         self.attack_range = 40
 
     def update(self, enemies):
-        for e in enemies:
-            if abs(self.x - e.x) <= self.attack_range:
-                self.try_attack(e)
-                return
-        self.reset_state()
-        self.move()
+        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
+        if in_range:
+            self.try_attack(in_range[0])
+        else:
+            self.reset_state()
+            self.move()
 
 class Mage(Hero):
     def __init__(self, sprites):
@@ -197,20 +199,24 @@ class Healer(Hero):
 
 class Enemy(Character):
     def __init__(self, image):
-        super().__init__(ScreenManager.WIDTH - 50, ScreenManager.HEIGHT // 2, 30, -1.5)
+        center_x = ScreenManager.WIDTH - 50
+        super().__init__(center_x, ScreenManager.HEIGHT // 2, 30, -1.5)
         self.attack = Attack(5, 1)
         self.image = image
+        self.width = self.image.get_width()
 
     def update(self, heroes):
-        for h in heroes:
-            if abs(self.x - h.x) < 40:
-                self.attack.attack_target(h)
+        for hero in heroes:
+            hero_center = hero.x + 20  # assuming 40px hero
+            if abs(self.x - hero_center) <= 40:
+                self.attack.attack_target(hero)
                 return
         self.move()
 
     def draw(self, surface):
         if self.alive:
-            surface.blit(self.image, (self.x, self.y))
+            surface.blit(self.image, (self.x - self.image.get_width() // 2, self.y))
+
 
 class Base:
     def __init__(self, x, color):
