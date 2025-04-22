@@ -1,6 +1,7 @@
 import pygame
 import random
 import time
+import os
 
 class ScreenManager:
     WIDTH, HEIGHT = 800, 400
@@ -28,69 +29,49 @@ class ScreenManager:
     def quit(self):
         pygame.quit()
 
-    # Sprite sheet loader
-    def load_sprite_sheet_by_row(path, frame_width, frame_height):
-        sheet = pygame.image.load(path).convert_alpha()
-        rows = sheet.get_height() // frame_height
-        cols = sheet.get_width() // frame_width
-        animations = {}
-        for row, name in enumerate(["move", "attack", "skill"]):
-            frames = []
-            for col in range(cols):
-                frame = sheet.subsurface(pygame.Rect(col * frame_width, row * frame_height, frame_width, frame_height))
-                frames.append(frame)
-            animations[name] = frames
-        return animations
-
 class AnimationManager:
     @staticmethod
-    def load_sprite_sheet_by_row(path, frame_width, frame_height):
+    def load_sprite_strip(path):
         sheet = pygame.image.load(path).convert_alpha()
-        rows = sheet.get_height() // frame_height
+        frame_height = sheet.get_height()
+        frame_width = frame_height  # assume square
         cols = sheet.get_width() // frame_width
-        animations = {}
-        for row, name in enumerate(["move", "attack", "skill"]):
-            frames = []
-            for col in range(cols):
-                frame = sheet.subsurface(pygame.Rect(col * frame_width, row * frame_height, frame_width, frame_height))
-                frames.append(frame)
-            animations[name] = frames
-        return animations
+        return [sheet.subsurface(pygame.Rect(i * frame_width, 0, frame_width, frame_height)) for i in range(cols)]
 
     @staticmethod
-    def load_hero_sprites():
-        return {
-            name: AnimationManager.load_sprite_sheet_by_row("Heros-go-/assets/temp_spritesheet.png", 40, 40)
-            for name in ["Archer", "Warrior", "Mage", "Tank", "Healer"]
-        }
+    def load_animations_from_folder(folder):
+        animations = {}
+        for file in os.listdir(folder):
+            if file.endswith(".png"):
+                key = file.replace(".png", "").lower()
+                animations[key] = AnimationManager.load_sprite_strip(os.path.join(folder, file))
+        return animations
 
     @staticmethod
     def create_enemy_surface():
-        surface = pygame.Surface((40, 40))
-        surface.fill(ScreenManager.RED)
-        return surface
+        s = pygame.Surface((40, 40))
+        s.fill(ScreenManager.RED)
+        return s
 
 class Animation:
     def __init__(self, frames, interval=0.1):
         self.frames = frames
         self.interval = interval
-        self.current_frame = 0
-        self.last_frame_time = time.time()
+        self.index = 0
+        self.last_time = time.time()
 
     def update(self):
-        if time.time() - self.last_frame_time > self.interval:
-            self.current_frame = (self.current_frame + 1) % len(self.frames)
-            self.last_frame_time = time.time()
+        if time.time() - self.last_time >= self.interval:
+            self.index = (self.index + 1) % len(self.frames)
+            self.last_time = time.time()
 
     def get_frame(self):
-        return self.frames[self.current_frame]
+        return self.frames[self.index]
 
 class Character:
     def __init__(self, x, y, health, speed):
-        self.x = x
-        self.y = y
-        self.health = health
-        self.max_health = health
+        self.x, self.y = x, y
+        self.health = self.max_health = health
         self.speed = speed
         self.alive = True
 
@@ -99,21 +80,20 @@ class Character:
             self.x += self.speed
 
 class Attack:
-    def __init__(self, damage, attack_cooldown):
-        self.damage = damage
-        self.attack_cooldown = attack_cooldown
-        self.last_attack_time = 0
+    def __init__(self, dmg, cooldown):
+        self.dmg = dmg
+        self.cooldown = cooldown
+        self.last_time = 0
 
     def can_attack(self):
-        return time.time() - self.last_attack_time >= self.attack_cooldown
+        return time.time() - self.last_time >= self.cooldown
 
     def attack_target(self, target):
         if self.can_attack():
-            target.health -= self.damage
-            if target.health <= 0:
-                target.alive = False
-            self.last_attack_time = time.time()
-
+            target.health -= self.dmg
+            target.alive = target.health > 0
+            self.last_time = time.time()
+    
 class SkillEffect:
     def apply(self, user, targets):
         pass
@@ -136,25 +116,35 @@ class BuffAttackSpeedEffect(SkillEffect):
 
 class ShieldEffect(SkillEffect):
     def apply(self, user, targets):
-        print("Shield applied (placeholder)")
+        if targets:
+            print("Shield applied (placeholder)")
+        else:
+            print("Shield activated, but no targets.")
 
 class GroupHealEffect(SkillEffect):
     def __init__(self, heal_amount=15):
         self.heal_amount = heal_amount
 
     def apply(self, user, targets):
+        healed = False
         for t in targets:
             if t.alive and t.health < t.max_health:
                 t.health += self.heal_amount
+                healed = True
                 if t.health > t.max_health:
                     t.health = t.max_health
+        if healed:
+            print("Healing allies (placeholder)")
+        else:
+            print("Heal activated, but no targets needed healing.")
 
 class Skill:
-    def __init__(self, name, skill_cooldown, effect: SkillEffect, skill_chance=1.0):
+    def __init__(self, name, skill_cooldown, effect: SkillEffect, skill_chance=1.0, cast_duration=0.3):
         self.name = name
         self.skill_cooldown = skill_cooldown
         self.effect = effect
         self.skill_chance = skill_chance
+        self.cast_duration = cast_duration
         self.last_used_time = 0
 
     def can_use_skill(self):
@@ -168,39 +158,104 @@ class Skill:
             self.last_used_time = time.time()
 
 class Hero(Character):
-    def __init__(self, name, health, speed, damage, attack_cooldown, sprite_frames, skill=None):
-        super().__init__(50, ScreenManager.HEIGHT // 2, health, speed)
+    def __init__(self, name, health, speed, dmg, atk_cd, anims, skill=None):
+        sprite_height = anims["move"][0].get_height()
+        y = (ScreenManager.HEIGHT // 2 + 50) - sprite_height
+        center_x = 50
+        super().__init__(center_x, y , health, speed)
         self.name = name
-        self.attack = Attack(damage, attack_cooldown)
-        self.skill = skill
+        self.attack = Attack(dmg, atk_cd)
+        self.animations = {k: Animation(v) for k, v in anims.items()}
         self.current_state = "move"
-        self.animations = {state: Animation(sprite_frames[state]) for state in sprite_frames}
+        self.skill = skill
+        self.skill_anim_start_time = 0
+        self.skill_anim_duration = 0
+        self.skill_completed = False
+
 
     def update_animation(self):
-        self.animations[self.current_state].update()
+        if self.current_state == "skill":
+            elapsed = time.time() - self.skill_anim_start_time
+            if elapsed >= self.skill_anim_duration and not self.skill_completed:
+                print(f"Skill animation completed after {elapsed} seconds")
+                self.skill_completed = True
+                self.reset_state()
+
+        if self.current_state in self.animations:
+            self.animations[self.current_state].update()
+
 
     def draw(self, surface):
-        if self.alive:
+        if self.alive and self.current_state in self.animations:
             self.update_animation()
             frame = self.animations[self.current_state].get_frame()
-            surface.blit(frame, (self.x, self.y))
-
-    def try_skill(self, targets):
-        if self.skill and self.skill.can_use_skill():
-            self.current_state = "skill"
-            self.skill.use(self, targets)
+            surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
 
     def try_attack(self, target):
         if self.attack.can_attack():
             self.current_state = "attack"
             self.attack.attack_target(target)
+        
+    def try_skill(self, targets):
+        if self.skill and self.skill.can_use_skill():
+            self.current_state = "skill"
+            self.skill.use(self, targets)
+            self.skill_anim_start_time = time.time()
+            self.skill_anim_duration = self.skill.cast_duration
+            self.skill_completed = False
 
     def reset_state(self):
-        self.current_state = "move"
+        if self.current_state != "skill": 
+            self.current_state = "move"
+
+    def update(self, enemies):
+        for e in enemies:
+            if abs(self.x - e.x) < 40:
+                self.try_attack(e)
+                return
+        self.reset_state()
+        self.move()
+
+
+class Archer(Hero):
+    def __init__(self, sprites):
+        super().__init__(
+            "Archer", 60, 2, 10, 0.5, sprites["Archer"],
+            Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4)
+        )
+        self.attack_range = 500
+        self.buff_range = 150
+
+    def update(self, enemies, allies):
+        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
+        nearby_allies = [a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.buff_range]
+
+        if in_range:
+            self.try_attack(in_range[0])
+            self.try_skill(nearby_allies)
+        else:
+            self.reset_state()
+            self.move()
+
+class Warrior(Hero):
+    def __init__(self, sprites):
+        super().__init__("Warrior", 150, 2, 15, 1.5, sprites["Warrior"])
+        self.attack_range = 40
+
+    def update(self, enemies):
+        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
+        if in_range:
+            self.try_attack(in_range[0])
+        else:
+            self.reset_state()
+            self.move()
 
 class Mage(Hero):
     def __init__(self, sprites):
-        super().__init__("Mage", 80, 1, 10, 1, sprites["Mage"], Skill("AOE", 3, AreaDamageEffect(), 0.6))
+        super().__init__(
+            "Mage", 80, 1, 10, 1, sprites["Mage"],
+            Skill("AOE", 3, AreaDamageEffect(), 0.6)
+        )
         self.attack_range = 350
 
     def update(self, enemies):
@@ -212,140 +267,154 @@ class Mage(Hero):
             self.reset_state()
             self.move()
 
-class Archer(Hero):
+class Tank(Hero):
     def __init__(self, sprites):
-        super().__init__("Archer", 60, 2, 5, 0.5, sprites["Archer"], Skill("Buff", 5, BuffAttackSpeedEffect(), 0.4))
-        self.attack_range = 500
-
-    def update(self, enemies):
-        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
-        if in_range:
-            self.try_attack(in_range[0])
-            self.try_skill([])
-        else:
-            self.reset_state()
-            self.move()
-
-class Warrior(Hero):
-    def __init__(self, sprites):
-        super().__init__("Warrior", 150, 2, 15, 1.5, sprites["Warrior"], None)
+        super().__init__(
+            "Tank", 300, 2, 0, 1, sprites["Tank"],
+            Skill("Shield", 6, ShieldEffect(), 0.8)
+        )
         self.attack_range = 40
-
-    def update(self, enemies):
-        for enemy in enemies:
-            if abs(self.x - enemy.x) <= self.attack_range:
-                self.try_attack(enemy)
-                return
-        self.reset_state()
-        self.move()
+        self.shield_trigger_range = 150
 
 class Tank(Hero):
     def __init__(self, sprites):
-        super().__init__("Tank", 300, 2, 0, 1, sprites["Tank"], Skill("Shield", 6, ShieldEffect(), 0.8))
+        super().__init__(
+            "Tank", 300, 2, 0, 1, sprites["Tank"],
+            Skill("Shield", 6, ShieldEffect(), 0.8)
+        )
+        self.attack_range = 40
+        self.shield_trigger_range = 150
 
-    def update(self, enemies):
-        close_enemies = [e for e in enemies if abs(self.x - e.x) < 40 and e.alive]
-        if close_enemies:
-            self.try_skill([])
-        else:
+    def reset_state(self):
+        self.current_state = "move"
+
+    def update(self, enemies, allies):
+        enemies_nearby = any(e.alive and abs(self.x - e.x) <= self.shield_trigger_range for e in enemies)
+
+        if self.current_state == "skill":
+            elapsed = time.time() - self.skill_anim_start_time
+            if elapsed >= self.skill_anim_duration:
+                self.reset_state()
+            return
+
+        if self.skill and enemies_nearby and self.skill.can_use_skill():
+            self.current_state = "skill"
+            self.skill.use(self, allies)
+            self.skill_anim_start_time = time.time()
+            self.skill_anim_duration = self.skill.cast_duration
+            return
+
+        if any(e.alive and abs(self.x - e.x) <= self.attack_range for e in enemies):
             self.reset_state()
-            self.move()
+            return
+
+        self.reset_state()
+        self.move()
 
 class Healer(Hero):
     def __init__(self, sprites):
-        super().__init__("Healer", 70, 1.5, 0, 1, sprites["Healer"], Skill("Group Heal", 5, GroupHealEffect(), 1.0))
-        self.heal_range = 100
+        super().__init__(
+            "Healer", 70, 1.5, 3, 1, sprites["Healer"],
+            Skill("Group Heal", 5, GroupHealEffect(), 1.0, cast_duration=1.5)
+        )
+        self.attack_range = 200
+        self.heal_range = 150
 
-    def update(self, heroes):
-        near_allies = [a for a in heroes if a != self and a.alive and abs(self.x - a.x) <= self.heal_range]
-        wounded = [a for a in near_allies if a.health < a.max_health]
+    def update(self, enemies, allies):
+        in_range = [e for e in enemies if e.alive and abs(self.x - e.x) <= self.attack_range]
+        nearby_allies = [a for a in allies if a != self and a.alive and a.health < a.max_health and abs(self.x - a.x) <= self.heal_range]
 
-        if wounded and self.skill.can_use_skill():
-            self.try_skill(wounded)
-        elif near_allies:
-            self.reset_state()
+        if in_range:
+            self.try_attack(in_range[0])
+            self.try_skill(nearby_allies)
         else:
             self.reset_state()
             self.move()
 
 class Enemy(Character):
     def __init__(self, image):
-        super().__init__(ScreenManager.WIDTH - 50, ScreenManager.HEIGHT // 2, 30, -1.5)
+        center_x = ScreenManager.WIDTH - 50
+        super().__init__(center_x, ScreenManager.HEIGHT // 2, 30, -1.5)
         self.attack = Attack(5, 1)
         self.image = image
+        self.width = self.image.get_width()
 
     def update(self, heroes):
         for hero in heroes:
-            if abs(self.x - hero.x) < 40:
+            hero_center = hero.x + 20  # assuming 40px hero
+            if abs(self.x - hero_center) <= 40:
                 self.attack.attack_target(hero)
                 return
         self.move()
 
     def draw(self, surface):
         if self.alive:
-            surface.blit(self.image, (self.x, self.y))
+            surface.blit(self.image, (self.x - self.image.get_width() // 2, self.y))
+
 
 class Base:
     def __init__(self, x, color):
-        self.health = 100
         self.x = x
+        self.health = 100
         self.color = color
 
     def draw(self, surface):
         pygame.draw.rect(surface, self.color, (self.x, ScreenManager.HEIGHT // 2, 50, 50))
-        pygame.draw.rect(surface, ScreenManager.WHITE, (self.x, ScreenManager.HEIGHT // 2 - 20, 50, 10))
         pygame.draw.rect(surface, ScreenManager.RED, (self.x, ScreenManager.HEIGHT // 2 - 20, self.health / 2, 10))
 
 class ResourceManager:
     def __init__(self):
         self.energy = 100
 
-    def can_afford(self, cost):
-        return self.energy >= cost
-
-    def spend(self, amount):
-        self.energy -= amount
-
+    def can_afford(self, cost): return self.energy >= cost
+    def spend(self, amt): self.energy -= amt
     def regenerate(self):
         if self.energy < 500:
             self.energy += 1
 
 class HeroButton:
-    def __init__(self, x, hero_type, cost, cooldown):
+    def __init__(self, x, cls, cost, cooldown):
         self.x = x
-        self.hero_type = hero_type
+        self.cls = cls
         self.cost = cost
-        self.cooldown = cooldown
-        self.last_pressed = 0
+        self.cd = cooldown
+        self.last = 0
         self.rect = pygame.Rect(x, ScreenManager.HEIGHT - 50, 70, 30)
 
-    def is_ready(self):
-        return time.time() - self.last_pressed >= self.cooldown
+    def is_ready(self): return time.time() - self.last >= self.cd
 
     def draw(self, surface, font, res_mgr):
-        color = ScreenManager.GREEN if self.is_ready() and res_mgr.can_afford(self.cost) else ScreenManager.RED
-        pygame.draw.rect(surface, color, self.rect)
-        label = font.render(self.hero_type.__name__, True, ScreenManager.BLACK)
-        surface.blit(label, (self.x + 7.5, ScreenManager.HEIGHT - 45))
+        c = ScreenManager.GREEN if self.is_ready() and res_mgr.can_afford(self.cost) else ScreenManager.RED
+        pygame.draw.rect(surface, c, self.rect)
+        surface.blit(font.render(self.cls.__name__, True, ScreenManager.BLACK), (self.x + 7, ScreenManager.HEIGHT - 45))
 
     def try_spawn(self, game):
         if self.is_ready() and game.res_mgr.can_afford(self.cost):
-            hero = game.create_hero(self.hero_type)
-            game.heroes.append(hero)
+            game.heroes.append(game.create_hero(self.cls))
             game.res_mgr.spend(self.cost)
-            self.last_pressed = time.time()
+            self.last = time.time()
 
 class GameManager:
     def __init__(self):
-        screen_mgr = ScreenManager()
-        self.screen_mgr = screen_mgr
+        self.screen_mgr = ScreenManager()
         self.player_base = Base(10, ScreenManager.GREEN)
         self.enemy_base = Base(ScreenManager.WIDTH - 60, ScreenManager.RED)
         self.heroes = []
         self.enemies = []
         self.res_mgr = ResourceManager()
-        self.hero_sprites = AnimationManager.load_hero_sprites()
         self.enemy_img = AnimationManager.create_enemy_surface()
+
+        folder = "Heros-go-/assets/Fighter"
+        fighter_anims = AnimationManager.load_animations_from_folder(folder)
+
+        self.hero_sprites = {
+            name: {
+                "move": fighter_anims.get("run", []),
+                "attack": fighter_anims.get("attack_2", []),
+                "skill": fighter_anims.get("idle", [])
+            } for name in ["Archer", "Warrior", "Mage", "Tank", "Healer"]
+        }
+
         self.hero_buttons = [
             HeroButton(100, Archer, 10, 1),
             HeroButton(180, Warrior, 15, 2),
@@ -355,39 +424,32 @@ class GameManager:
         ]
         self.running = True
 
+    def create_hero(self, cls):
+        return cls(self.hero_sprites)
 
     def spawn_enemy(self):
         if random.randint(1, 100) > 98:
             self.enemies.append(Enemy(self.enemy_img))
-            
-    def create_hero(self, hero_class):
-        return hero_class(self.hero_sprites)
 
     def update(self):
-        for hero in self.heroes:
-            if isinstance(hero, Healer):
-                hero.update(self.heroes)
+        for h in self.heroes:
+            if isinstance(h, (Healer, Archer, Tank)):
+                h.update(self.enemies, self.heroes)
             else:
-                hero.update(self.enemies)
-
-        for enemy in self.enemies:
-            enemy.update(self.heroes)
-
+                h.update(self.enemies)
+        for e in self.enemies:
+            e.update(self.heroes)
         self.heroes = [h for h in self.heroes if h.alive]
         self.enemies = [e for e in self.enemies if e.alive]
-
-        for hero in self.heroes:
-            if hero.x >= ScreenManager.WIDTH - 60:
+        for h in self.heroes:
+            if h.x >= ScreenManager.WIDTH - 60:
                 self.enemy_base.health -= 5
-                hero.alive = False
-
-        for enemy in self.enemies:
-            if enemy.x <= 50:
+                h.alive = False
+        for e in self.enemies:
+            if e.x <= 50:
                 self.player_base.health -= 5
-                enemy.alive = False
-
+                e.alive = False
         self.res_mgr.regenerate()
-
         if self.player_base.health <= 0:
             self.running = False
             print("Game Over! You lost!")
@@ -396,41 +458,34 @@ class GameManager:
             print("Victory! You won!")
 
     def draw(self):
-        self.screen_mgr.fill(ScreenManager.WHITE)
-        self.player_base.draw(self.screen_mgr.surface)
-        self.enemy_base.draw(self.screen_mgr.surface)
-
-        for hero in self.heroes:
-            hero.draw(self.screen_mgr.surface)
-        for enemy in self.enemies:
-            enemy.draw(self.screen_mgr.surface)
-
+        sm = self.screen_mgr
+        sm.fill(ScreenManager.WHITE)
+        self.player_base.draw(sm.surface)
+        self.enemy_base.draw(sm.surface)
+        for h in self.heroes:
+            h.draw(sm.surface)
+        for e in self.enemies:
+            e.draw(sm.surface)
         font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
-            btn.draw(self.screen_mgr.surface, font, self.res_mgr)
-
-        energy_text = font.render(f"Energy: {int(self.res_mgr.energy)}", True, ScreenManager.BLACK)
-        self.screen_mgr.surface.blit(energy_text, (10, 10))
-        self.screen_mgr.update()
-
+            btn.draw(sm.surface, font, self.res_mgr)
+        sm.surface.blit(font.render(f"Energy: {int(self.res_mgr.energy)}", True, ScreenManager.BLACK), (10, 10))
+        sm.update()
 
 def main():
     game = GameManager()
     while game.running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
                 game.running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                for btn in game.hero_buttons:
-                    if btn.rect.collidepoint(event.pos):
-                        btn.try_spawn(game)
-
+            elif e.type == pygame.MOUSEBUTTONDOWN:
+                for b in game.hero_buttons:
+                    if b.rect.collidepoint(e.pos):
+                        b.try_spawn(game)
         game.spawn_enemy()
         game.update()
         game.draw()
-
         game.screen_mgr.tick()
-
     game.screen_mgr.quit()
 
 if __name__ == "__main__":

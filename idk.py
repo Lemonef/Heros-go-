@@ -116,19 +116,27 @@ class BuffAttackSpeedEffect(SkillEffect):
 
 class ShieldEffect(SkillEffect):
     def apply(self, user, targets):
-        print("Shield applied (placeholder)")
+        if targets:
+            print("Shield applied (placeholder)")
+        else:
+            print("Shield activated, but no targets.")
 
 class GroupHealEffect(SkillEffect):
     def __init__(self, heal_amount=15):
         self.heal_amount = heal_amount
 
     def apply(self, user, targets):
+        healed = False
         for t in targets:
             if t.alive and t.health < t.max_health:
                 t.health += self.heal_amount
+                healed = True
                 if t.health > t.max_health:
                     t.health = t.max_health
-        print("healing allies (placeholder)")
+        if healed:
+            print("Healing allies (placeholder)")
+        else:
+            print("Heal activated, but no targets needed healing.")
 
 class Skill:
     def __init__(self, name, skill_cooldown, effect: SkillEffect, skill_chance=1.0, cast_duration=0.3):
@@ -162,17 +170,20 @@ class Hero(Character):
         self.skill = skill
         self.skill_anim_start_time = 0
         self.skill_anim_duration = 0
+        self.skill_completed = False
 
 
     def update_animation(self):
         if self.current_state == "skill":
-            elapsed = time.time() - self.skill_anim_start_time 
-            if elapsed >= self.skill_anim_duration:
-                self.reset_state() 
+            elapsed = time.time() - self.skill_anim_start_time
+            if elapsed >= self.skill_anim_duration and not self.skill_completed:
                 print(f"Skill animation completed after {elapsed} seconds")
+                self.skill_completed = True
+                self.reset_state()
 
         if self.current_state in self.animations:
             self.animations[self.current_state].update()
+
 
     def draw(self, surface):
         if self.alive and self.current_state in self.animations:
@@ -191,6 +202,7 @@ class Hero(Character):
             self.skill.use(self, targets)
             self.skill_anim_start_time = time.time()
             self.skill_anim_duration = self.skill.cast_duration
+            self.skill_completed = False
 
     def reset_state(self):
         if self.current_state != "skill": 
