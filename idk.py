@@ -96,11 +96,14 @@ class Attack:
 
 class Hero(Character):
     def __init__(self, name, health, speed, dmg, atk_cd, anims):
-        super().__init__(50, ScreenManager.HEIGHT // 2, health, speed)
+        sprite_height = anims["move"][0].get_height()
+        y = (ScreenManager.HEIGHT // 2 + 50) - sprite_height
+        super().__init__(50, y, health, speed)
         self.name = name
         self.attack = Attack(dmg, atk_cd)
         self.animations = {k: Animation(v) for k, v in anims.items()}
         self.current_state = "move"
+
 
     def update_animation(self):
         if self.current_state in self.animations:
@@ -127,6 +130,70 @@ class Hero(Character):
                 return
         self.reset_state()
         self.move()
+        
+class Archer(Hero):
+    def __init__(self, sprites):
+        super().__init__("Archer", 60, 2, 5, 0.5, sprites["Archer"])
+        self.attack_range = 500
+
+    def update(self, enemies):
+        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
+        if in_range:
+            self.try_attack(in_range[0])
+        else:
+            self.reset_state()
+            self.move()
+
+class Warrior(Hero):
+    def __init__(self, sprites):
+        super().__init__("Warrior", 150, 2, 15, 1.5, sprites["Warrior"])
+        self.attack_range = 40
+
+    def update(self, enemies):
+        for e in enemies:
+            if abs(self.x - e.x) <= self.attack_range:
+                self.try_attack(e)
+                return
+        self.reset_state()
+        self.move()
+
+class Mage(Hero):
+    def __init__(self, sprites):
+        super().__init__("Mage", 80, 1, 10, 1, sprites["Mage"])
+        self.attack_range = 350
+
+    def update(self, enemies):
+        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
+        if in_range:
+            self.try_attack(in_range[0])
+        else:
+            self.reset_state()
+            self.move()
+
+class Tank(Hero):
+    def __init__(self, sprites):
+        super().__init__("Tank", 300, 2, 0, 1, sprites["Tank"])
+
+    def update(self, enemies):
+        close = [e for e in enemies if abs(self.x - e.x) < 40 and e.alive]
+        if not close:
+            self.reset_state()
+            self.move()
+
+class Healer(Hero):
+    def __init__(self, sprites):
+        super().__init__("Healer", 70, 1.5, 0, 1, sprites["Healer"])
+        self.heal_range = 100
+
+    def update(self, allies):
+        near = [a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.heal_range and a.health < a.max_health]
+        if near:
+            # placeholder: heal logic
+            near[0].health = min(near[0].max_health, near[0].health + 5)
+        else:
+            self.reset_state()
+            self.move()
+
 
 class Enemy(Character):
     def __init__(self, image):
@@ -209,16 +276,16 @@ class GameManager:
         }
 
         self.hero_buttons = [
-            HeroButton(100, Hero, 10, 1),
-            HeroButton(180, Hero, 15, 2),
-            HeroButton(260, Hero, 20, 3),
-            HeroButton(340, Hero, 20, 4),
-            HeroButton(420, Hero, 15, 2)
+            HeroButton(100, Archer, 10, 1),
+            HeroButton(180, Warrior, 15, 2),
+            HeroButton(260, Mage, 20, 3),
+            HeroButton(340, Tank, 20, 4),
+            HeroButton(420, Healer, 15, 2)
         ]
         self.running = True
 
     def create_hero(self, cls):
-        return Hero("Fighter", 100, 2, 10, 1, self.hero_sprites["Warrior"])
+        return cls(self.hero_sprites)
 
     def spawn_enemy(self):
         if random.randint(1, 100) > 98:
