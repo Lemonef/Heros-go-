@@ -334,8 +334,8 @@ class ResourceManager:
     def can_afford(self, cost): return self.energy >= cost
     def spend(self, amt): self.energy -= amt
     def regenerate(self):
-        if self.energy < 500:
-            self.energy += 1
+        if self.energy < 200:
+            self.energy += 0.1
 
 class HeroButton:
     def __init__(self, x, cls, cost, cooldown):
@@ -368,12 +368,18 @@ class GameManager:
         self.enemies = []
         self.res_mgr = ResourceManager()
         self.enemy_img = AnimationManager.create_enemy_surface()
-
-        folder = "assets/Fighter"
-        fighter_anims = AnimationManager.load_animations_from_folder(folder)
+        
+        fighter_anims = AnimationManager.load_animations_from_folder("assets/Fighter")
         archer_anims = AnimationManager.load_animations_from_folder("assets/Samurai")
         mage_anims = AnimationManager.load_animations_from_folder("assets/Mage")
         healer_anims = AnimationManager.load_animations_from_folder("assets/Healer")
+        
+        full_bg = pygame.image.load("assets/Background/Stage1.png").convert()
+        cropped_height = full_bg.get_height() - 50
+        cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
+        self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
+
+
 
         self.hero_sprites = {
             "Archer": {
@@ -442,7 +448,7 @@ class GameManager:
 
     def draw(self):
         sm = self.screen_mgr
-        sm.fill(ScreenManager.WHITE)
+        sm.surface.blit(self.background, (0, 0))
         self.player_base.draw(sm.surface)
         self.enemy_base.draw(sm.surface)
         for h in self.heroes:
