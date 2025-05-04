@@ -239,7 +239,7 @@ class Archer(Hero):
 
 class Warrior(Hero):
     def __init__(self, sprites):
-        super().__init__("Warrior", 150, 2, 15, 1.5, sprites["Warrior"])
+        super().__init__("Warrior", 150, 2, 15, 0.5, sprites["Warrior"])
         self.attack_range = 40
 
     def update(self, enemies):
@@ -275,41 +275,6 @@ class Tank(Hero):
         )
         self.attack_range = 40
         self.shield_trigger_range = 150
-
-class Tank(Hero):
-    def __init__(self, sprites):
-        super().__init__(
-            "Tank", 300, 2, 0, 1, sprites["Tank"],
-            Skill("Shield", 6, ShieldEffect(), 0.8)
-        )
-        self.attack_range = 40
-        self.shield_trigger_range = 150
-
-    def reset_state(self):
-        self.current_state = "move"
-
-    def update(self, enemies, allies):
-        enemies_nearby = any(e.alive and abs(self.x - e.x) <= self.shield_trigger_range for e in enemies)
-
-        if self.current_state == "skill":
-            elapsed = time.time() - self.skill_anim_start_time
-            if elapsed >= self.skill_anim_duration:
-                self.reset_state()
-            return
-
-        if self.skill and enemies_nearby and self.skill.can_use_skill():
-            self.current_state = "skill"
-            self.skill.use(self, allies)
-            self.skill_anim_start_time = time.time()
-            self.skill_anim_duration = self.skill.cast_duration
-            return
-
-        if any(e.alive and abs(self.x - e.x) <= self.attack_range for e in enemies):
-            self.reset_state()
-            return
-
-        self.reset_state()
-        self.move()
 
 class Healer(Hero):
     def __init__(self, sprites):
@@ -404,23 +369,41 @@ class GameManager:
         self.res_mgr = ResourceManager()
         self.enemy_img = AnimationManager.create_enemy_surface()
 
-        folder = "Heros-go-/assets/Fighter"
+        folder = "assets/Fighter"
         fighter_anims = AnimationManager.load_animations_from_folder(folder)
+        archer_anims = AnimationManager.load_animations_from_folder("assets/Samurai")
+        mage_anims = AnimationManager.load_animations_from_folder("assets/Mage")
+        healer_anims = AnimationManager.load_animations_from_folder("assets/Healer")
 
         self.hero_sprites = {
-            name: {
+            "Archer": {
+                "move": archer_anims.get("run", []),
+                "attack": archer_anims.get("attack_2", []),
+                "skill": archer_anims.get("idle", []),
+            },
+            "Warrior": {
                 "move": fighter_anims.get("run", []),
                 "attack": fighter_anims.get("attack_2", []),
-                "skill": fighter_anims.get("idle", [])
-            } for name in ["Archer", "Warrior", "Mage", "Tank", "Healer"]
+                "skill": fighter_anims.get("idle", []),
+            },
+            "Mage": {
+                "move": mage_anims.get("walk", []), 
+                "attack": mage_anims.get("attack_1", []),
+                "skill": mage_anims.get("attack_2", []),
+            },
+            "Healer": {
+                "move": healer_anims.get("walk", []),
+                "attack": healer_anims.get("attack_4", []),
+                "skill": healer_anims.get("scream", []),
+            }
         }
+
 
         self.hero_buttons = [
             HeroButton(100, Archer, 10, 1),
             HeroButton(180, Warrior, 15, 2),
             HeroButton(260, Mage, 20, 3),
-            HeroButton(340, Tank, 20, 4),
-            HeroButton(420, Healer, 15, 2)
+            HeroButton(340, Healer, 15, 2)
         ]
         self.running = True
 
