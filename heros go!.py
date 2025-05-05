@@ -112,14 +112,7 @@ class AreaDamageEffect(SkillEffect):
 
 class BuffAttackSpeedEffect(SkillEffect):
     def apply(self, user, targets):
-        print("Buffing ally attack speed (placeholder)")
-
-class ShieldEffect(SkillEffect):
-    def apply(self, user, targets):
-        if targets:
-            print("Shield applied (placeholder)")
-        else:
-            print("Shield activated, but no targets.")
+        pass
 
 class GroupHealEffect(SkillEffect):
     def __init__(self, heal_amount=15):
@@ -133,10 +126,6 @@ class GroupHealEffect(SkillEffect):
                 healed = True
                 if t.health > t.max_health:
                     t.health = t.max_health
-        if healed:
-            print("Healing allies (placeholder)")
-        else:
-            print("Heal activated, but no targets needed healing.")
 
 class Skill:
     def __init__(self, name, skill_cooldown, effect: SkillEffect, skill_chance=1.0, cast_duration=0.3):
@@ -221,7 +210,6 @@ class Hero(Character):
         if self.current_state == "skill":
             elapsed = time.time() - self.skill_anim_start_time
             if elapsed >= self.skill_anim_duration and not self.skill_completed:
-                print(f"Skill animation completed after {elapsed} seconds")
                 self.skill_completed = True
                 self.reset_state()
 
@@ -412,12 +400,13 @@ class ResourceManager:
                 self.energy = self.max_energy
 
     def upgrade_energy(self):
-        if self.upgrade_clicks < 5:
+        upgrade_cost = 20
+        if self.upgrade_clicks < 5 and self.energy >= upgrade_cost:
+            self.energy -= upgrade_cost
             self.max_energy += 10
             self.regen_rate += 0.01
             self.upgrade_clicks += 1
-            print(f"Energy upgraded: max={self.max_energy}, regen_rate={self.regen_rate:.2f}")
-            
+                
 class UpgradeButton:
     def __init__(self, x, y, width=120, height=55):
         self.rect = pygame.Rect(x, y, width, height)
@@ -433,13 +422,14 @@ class UpgradeButton:
             color = (150, 150, 150)
         pygame.draw.rect(surface, color, self.rect, border_radius=5)
         pygame.draw.rect(surface, (0,0,0), self.rect, width=2, border_radius=5)
-        
+
+        upgrade_cost = 20
         if res_mgr.upgrade_clicks >= 5:
             label = "Maxed"
         elif time.time() - self.last_upgrade_time < 1:
             label = "Upgraded!"
         else:
-            label = "Upgrade Energy"
+            label = f"Upgrade ({upgrade_cost})"
 
         text = font.render(label, True, (0,0,0))
         text_x = self.rect.x + (self.rect.width - text.get_width()) // 2
