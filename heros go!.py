@@ -157,6 +157,50 @@ class Skill:
             self.effect.apply(user, targets)
             self.last_used_time = time.time()
 
+class Projectile:
+    def __init__(self, x, y, target_x, target_y, speed, image, damage, on_hit_callback=None, max_range=300):
+        self.x = x
+        self.y = y
+        self.start_x = x
+        self.start_y = y
+        self.target_x = target_x
+        self.target_y = target_y
+        self.speed = speed
+        self.image = image
+        self.damage = damage
+        self.on_hit_callback = on_hit_callback
+        self.max_range = max_range
+        self.alive = True
+
+        dx = target_x - x
+        dy = target_y - y
+        dist = (dx ** 2 + dy ** 2) ** 0.5
+        if dist != 0:
+            self.dir_x = dx / dist
+            self.dir_y = dy / dist
+        else:
+            self.dir_x = self.dir_y = 0
+
+    def update(self):
+        self.x += self.dir_x * self.speed
+        self.y += self.dir_y * self.speed
+
+        if self.has_reached_target():
+            if self.on_hit_callback:
+                self.on_hit_callback()
+            self.alive = False
+
+        dist_traveled = ((self.x - self.start_x) ** 2 + (self.y - self.start_y) ** 2) ** 0.5
+        if dist_traveled >= self.max_range:
+            self.alive = False
+
+    def has_reached_target(self):
+        return (abs(self.x - self.target_x) < 5) and (abs(self.y - self.target_y) < 5)
+
+    def draw(self, surface):
+        surface.blit(self.image, (self.x - self.image.get_width() // 2, self.y - self.image.get_height() // 2))
+
+
 class Hero(Character):
     def __init__(self, name, health, speed, dmg, atk_cd, anims, skill=None):
         sprite_height = anims["move"][0].get_height()
@@ -184,19 +228,25 @@ class Hero(Character):
         if self.current_state in self.animations:
             self.animations[self.current_state].update()
 
-
     def draw(self, surface):
         if self.alive and self.current_state in self.animations:
             self.update_animation()
             frame = self.animations[self.current_state].get_frame()
             surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
+            
+            if self.current_state == "skill":
+                import math
+                radius = 5 + 1.5 * math.sin(time.time() * 8)
+                center = (int(self.x), int(self.y - 12))
+                pygame.draw.circle(surface, (0, 0, 0), center, int(radius) + 2)  # outline
+                pygame.draw.circle(surface, (255, 255, 0), center, int(radius))  # fill
 
     def try_attack(self, target):
         if self.attack.can_attack():
             self.current_state = "attack"
             self.attack.attack_target(target)
         
-    def try_skill(self, targets):
+    def try_skill(self, targets, game):
         if self.skill and self.skill.can_use_skill():
             self.current_state = "skill"
             self.skill.use(self, targets)
@@ -204,11 +254,26 @@ class Hero(Character):
             self.skill_anim_duration = self.skill.cast_duration
             self.skill_completed = False
 
+            if isinstance(self.skill.effect, AreaDamageEffect) and targets:
+                for target in targets:
+                    proj_img = pygame.Surface((10,10))
+                    proj_img.fill((255,100,0))  # placeholder color
+                    proj = Projectile(
+                        self.x, self.y,
+                        target.x, target.y,
+                        speed=4,
+                        image=proj_img,
+                        damage=self.skill.effect.damage,
+                        on_hit_callback=lambda t=target: self.skill.effect.apply(self, [t]),
+                        max_range=300
+                    )
+                    game.projectiles.append(proj)
+                    
     def reset_state(self):
         if self.current_state != "skill": 
             self.current_state = "move"
 
-    def update(self, enemies):
+    def update(self, enemies, game=None):
         for e in enemies:
             if abs(self.x - e.x) < 40:
                 self.try_attack(e)
@@ -226,13 +291,13 @@ class Archer(Hero):
         self.attack_range = 500
         self.buff_range = 150
 
-    def update(self, enemies, allies):
+    def update(self, enemies, allies, game):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
         nearby_allies = [a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.buff_range]
 
         if in_range:
             self.try_attack(in_range[0])
-            self.try_skill(nearby_allies)
+            self.try_skill(nearby_allies, game)
         else:
             self.reset_state()
             self.move()
@@ -242,7 +307,7 @@ class Warrior(Hero):
         super().__init__("Warrior", 150, 2, 15, 0.5, sprites["Warrior"])
         self.attack_range = 40
 
-    def update(self, enemies):
+    def update(self, enemies, game):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
         if in_range:
             self.try_attack(in_range[0])
@@ -258,23 +323,14 @@ class Mage(Hero):
         )
         self.attack_range = 350
 
-    def update(self, enemies):
+    def update(self, enemies, game):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
         if in_range:
             self.try_attack(in_range[0])
-            self.try_skill(enemies)
+            self.try_skill(enemies, game)
         else:
             self.reset_state()
             self.move()
-
-class Tank(Hero):
-    def __init__(self, sprites):
-        super().__init__(
-            "Tank", 300, 2, 0, 1, sprites["Tank"],
-            Skill("Shield", 6, ShieldEffect(), 0.8)
-        )
-        self.attack_range = 40
-        self.shield_trigger_range = 150
 
 class Healer(Hero):
     def __init__(self, sprites):
@@ -285,13 +341,13 @@ class Healer(Hero):
         self.attack_range = 200
         self.heal_range = 150
 
-    def update(self, enemies, allies):
+    def update(self, enemies, allies, game):
         in_range = [e for e in enemies if e.alive and abs(self.x - e.x) <= self.attack_range]
         nearby_allies = [a for a in allies if a != self and a.alive and a.health < a.max_health and abs(self.x - a.x) <= self.heal_range]
 
         if in_range:
             self.try_attack(in_range[0])
-            self.try_skill(nearby_allies)
+            self.try_skill(nearby_allies, game)
         else:
             self.reset_state()
             self.move()
@@ -336,16 +392,64 @@ class Base:
         pygame.draw.rect(surface, ScreenManager.RED, (self.x, y_pos - 20, self.health / 2, 10))
 
 
-
 class ResourceManager:
     def __init__(self):
         self.energy = 100
+        self.max_energy = 100
+        self.regen_rate = 0.1
+        self.upgrade_clicks = 0
 
-    def can_afford(self, cost): return self.energy >= cost
-    def spend(self, amt): self.energy -= amt
+    def can_afford(self, cost):
+        return self.energy >= cost
+
+    def spend(self, amt):
+        self.energy -= amt
+
     def regenerate(self):
-        if self.energy < 100:
-            self.energy += 0.1
+        if self.energy < self.max_energy:
+            self.energy += self.regen_rate
+            if self.energy > self.max_energy:
+                self.energy = self.max_energy
+
+    def upgrade_energy(self):
+        if self.upgrade_clicks < 5:
+            self.max_energy += 10
+            self.regen_rate += 0.01
+            self.upgrade_clicks += 1
+            print(f"Energy upgraded: max={self.max_energy}, regen_rate={self.regen_rate:.2f}")
+            
+class UpgradeButton:
+    def __init__(self, x, y, width=120, height=55):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.last_upgrade_time = 0
+
+    def draw(self, surface, font, res_mgr):
+        mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
+        if res_mgr.upgrade_clicks < 5:
+            color = (250, 180, 0)
+            if mouse_over:
+                color = (255, 210, 50)
+        else:
+            color = (150, 150, 150)
+        pygame.draw.rect(surface, color, self.rect, border_radius=5)
+        pygame.draw.rect(surface, (0,0,0), self.rect, width=2, border_radius=5)
+        
+        if res_mgr.upgrade_clicks >= 5:
+            label = "Maxed"
+        elif time.time() - self.last_upgrade_time < 1:
+            label = "Upgraded!"
+        else:
+            label = "Upgrade Energy"
+
+        text = font.render(label, True, (0,0,0))
+        text_x = self.rect.x + (self.rect.width - text.get_width()) // 2
+        text_y = self.rect.y + (self.rect.height - text.get_height()) // 2
+        surface.blit(text, (text_x, text_y))
+
+    def try_click(self, pos, res_mgr):
+        if self.rect.collidepoint(pos) and res_mgr.upgrade_clicks < 5:
+            res_mgr.upgrade_energy()
+            self.last_upgrade_time = time.time()
 
 class HeroButton:
     def __init__(self, x, cls, cost, cooldown):
@@ -420,20 +524,19 @@ class GameManager:
         self.enemy_base = Base(ScreenManager.WIDTH - 60, ScreenManager.RED, "assets/Base/Base2.png", scale_factor=3)
         self.heroes = []
         self.enemies = []
+        self.projectiles = []
         self.res_mgr = ResourceManager()
         self.enemy_img = AnimationManager.create_enemy_surface()
-        
+
         fighter_anims = AnimationManager.load_animations_from_folder("assets/Fighter")
         archer_anims = AnimationManager.load_animations_from_folder("assets/Samurai")
         mage_anims = AnimationManager.load_animations_from_folder("assets/Mage")
         healer_anims = AnimationManager.load_animations_from_folder("assets/Healer")
-        
+
         full_bg = pygame.image.load("assets/Background/Stage1.png").convert()
         cropped_height = full_bg.get_height() - 50
         cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
         self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
-
-
 
         self.hero_sprites = {
             "Archer": {
@@ -447,7 +550,7 @@ class GameManager:
                 "skill": fighter_anims.get("idle", []),
             },
             "Mage": {
-                "move": mage_anims.get("walk", []), 
+                "move": mage_anims.get("walk", []),
                 "attack": mage_anims.get("attack_1", []),
                 "skill": mage_anims.get("attack_2", []),
             },
@@ -458,13 +561,14 @@ class GameManager:
             }
         }
 
-
         self.hero_buttons = [
             HeroButton(100, Archer, 10, 1),
             HeroButton(190, Warrior, 15, 2),
             HeroButton(280, Mage, 20, 3),
             HeroButton(370, Healer, 15, 2)
         ]
+        
+        self.upgrade_button = UpgradeButton(520, ScreenManager.HEIGHT - 70, width=160)
         self.running = True
 
     def create_hero(self, cls):
@@ -476,14 +580,19 @@ class GameManager:
 
     def update(self):
         for h in self.heroes:
-            if isinstance(h, (Healer, Archer, Tank)):
-                h.update(self.enemies, self.heroes)
+            if isinstance(h, (Healer, Archer)):
+                h.update(self.enemies, self.heroes, self)
             else:
-                h.update(self.enemies)
+                h.update(self.enemies, self)
         for e in self.enemies:
             e.update(self.heroes)
+        for proj in self.projectiles:
+            proj.update()
+        self.projectiles = [p for p in self.projectiles if p.alive]
+
         self.heroes = [h for h in self.heroes if h.alive]
         self.enemies = [e for e in self.enemies if e.alive]
+
         for h in self.heroes:
             if h.x >= ScreenManager.WIDTH - 60:
                 self.enemy_base.health -= 5
@@ -492,7 +601,9 @@ class GameManager:
             if e.x <= 50:
                 self.player_base.health -= 5
                 e.alive = False
+
         self.res_mgr.regenerate()
+
         if self.player_base.health <= 0:
             self.running = False
             print("Game Over! You lost!")
@@ -502,9 +613,13 @@ class GameManager:
 
     def draw(self):
         sm = self.screen_mgr
+        font = pygame.font.Font(None, 24)
         sm.surface.blit(self.background, (0, 0))
         self.player_base.draw(sm.surface)
         self.enemy_base.draw(sm.surface)
+        self.upgrade_button.draw(sm.surface, font, self.res_mgr)
+        for proj in self.projectiles:
+            proj.draw(self.screen_mgr.surface)
         for h in self.heroes:
             h.draw(sm.surface)
         for e in self.enemies:
@@ -512,7 +627,7 @@ class GameManager:
         font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
             btn.draw(sm.surface, font, self.res_mgr)
-        sm.surface.blit(font.render(f"Energy: {int(self.res_mgr.energy)} / 100", True, ScreenManager.BLACK), (10, 10))
+        sm.surface.blit(font.render(f"Energy: {int(self.res_mgr.energy)} / {int(self.res_mgr.max_energy)}", True, ScreenManager.BLACK), (10, 10))
         sm.update()
 
 def main():
@@ -525,6 +640,7 @@ def main():
                 for b in game.hero_buttons:
                     if b.rect.collidepoint(e.pos):
                         b.try_spawn(game)
+                game.upgrade_button.try_click(e.pos, game.res_mgr)
         game.spawn_enemy()
         game.update()
         game.draw()
