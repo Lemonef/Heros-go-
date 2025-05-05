@@ -318,14 +318,24 @@ class Enemy(Character):
 
 
 class Base:
-    def __init__(self, x, color):
+    def __init__(self, x, color, image_path, scale_factor=6):
         self.x = x
         self.health = 100
         self.color = color
+        self.image = pygame.image.load(image_path).convert_alpha()
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
+        self.image = pygame.transform.scale(
+            self.image,
+            (self.width // scale_factor, self.height // scale_factor)
+        )
 
     def draw(self, surface):
-        pygame.draw.rect(surface, self.color, (self.x, ScreenManager.HEIGHT // 2, 50, 50))
-        pygame.draw.rect(surface, ScreenManager.RED, (self.x, ScreenManager.HEIGHT // 2 - 20, self.health / 2, 10))
+        y_pos = ScreenManager.HEIGHT // 2
+        surface.blit(self.image, (self.x, y_pos))
+        pygame.draw.rect(surface, ScreenManager.RED, (self.x, y_pos - 20, self.health / 2, 10))
+
+
 
 class ResourceManager:
     def __init__(self):
@@ -334,7 +344,7 @@ class ResourceManager:
     def can_afford(self, cost): return self.energy >= cost
     def spend(self, amt): self.energy -= amt
     def regenerate(self):
-        if self.energy < 200:
+        if self.energy < 100:
             self.energy += 0.1
 
 class HeroButton:
@@ -362,8 +372,8 @@ class HeroButton:
 class GameManager:
     def __init__(self):
         self.screen_mgr = ScreenManager()
-        self.player_base = Base(10, ScreenManager.GREEN)
-        self.enemy_base = Base(ScreenManager.WIDTH - 60, ScreenManager.RED)
+        self.player_base = Base(10, ScreenManager.GREEN, "assets/Base/Base1.png", scale_factor=6)
+        self.enemy_base = Base(ScreenManager.WIDTH - 60, ScreenManager.RED, "assets/Base/Base2.png", scale_factor=3)
         self.heroes = []
         self.enemies = []
         self.res_mgr = ResourceManager()
@@ -458,7 +468,7 @@ class GameManager:
         font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
             btn.draw(sm.surface, font, self.res_mgr)
-        sm.surface.blit(font.render(f"Energy: {int(self.res_mgr.energy)}", True, ScreenManager.BLACK), (10, 10))
+        sm.surface.blit(font.render(f"Energy: {int(self.res_mgr.energy)} / 100", True, ScreenManager.BLACK), (10, 10))
         sm.update()
 
 def main():
