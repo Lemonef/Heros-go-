@@ -361,9 +361,37 @@ class HeroButton:
     def is_ready(self):
         return time.time() - self.last >= self.cd
 
+    def brighten(self, color, amount=40):
+        return tuple(min(255, c + amount) for c in color)
+
     def draw(self, surface, font, res_mgr):
-        color = ScreenManager.GREEN if self.is_ready() and res_mgr.can_afford(self.cost) else ScreenManager.RED
+        color_map = {
+            'Archer': (0, 200, 0),
+            'Warrior': (0, 100, 200),
+            'Mage': (150, 0, 200),
+            'Healer': (255, 100, 180)
+        }
+        base_color = color_map.get(self.cls.__name__, ScreenManager.RED)
+        color = base_color
+
+        ready = self.is_ready() and res_mgr.can_afford(self.cost)
+        mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
+
+        if mouse_over and ready:
+            color = self.brighten(color, 40)
+        elif not ready:
+            color = (150, 150, 150)  # greyed out when on cooldown or can't afford
+
         pygame.draw.rect(surface, color, self.rect, border_radius=5)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, width=2, border_radius=5)
+
+        # Cooldown bar
+        if not self.is_ready():
+            progress = (time.time() - self.last) / self.cd
+            progress = min(max(progress, 0), 1)
+            cooldown_bar_width = int(self.width * progress)
+            cooldown_bar_rect = pygame.Rect(self.x, self.rect.y, cooldown_bar_width, 5)
+            pygame.draw.rect(surface, (100, 100, 100), cooldown_bar_rect)
 
         name_text = font.render(self.cls.__name__, True, ScreenManager.BLACK)
         small_font = pygame.font.Font(None, 18)
@@ -384,8 +412,6 @@ class HeroButton:
             game.heroes.append(game.create_hero(self.cls))
             game.res_mgr.spend(self.cost)
             self.last = time.time()
-
-
 
 class GameManager:
     def __init__(self):
