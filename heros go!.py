@@ -354,20 +354,38 @@ class HeroButton:
         self.cost = cost
         self.cd = cooldown
         self.last = 0
-        self.rect = pygame.Rect(x, ScreenManager.HEIGHT - 50, 70, 30)
+        self.width = 80
+        self.height = 55
+        self.rect = pygame.Rect(x, ScreenManager.HEIGHT - 70, self.width, self.height)
 
-    def is_ready(self): return time.time() - self.last >= self.cd
+    def is_ready(self):
+        return time.time() - self.last >= self.cd
 
     def draw(self, surface, font, res_mgr):
-        c = ScreenManager.GREEN if self.is_ready() and res_mgr.can_afford(self.cost) else ScreenManager.RED
-        pygame.draw.rect(surface, c, self.rect)
-        surface.blit(font.render(self.cls.__name__, True, ScreenManager.BLACK), (self.x + 7, ScreenManager.HEIGHT - 45))
+        color = ScreenManager.GREEN if self.is_ready() and res_mgr.can_afford(self.cost) else ScreenManager.RED
+        pygame.draw.rect(surface, color, self.rect, border_radius=5)
+
+        name_text = font.render(self.cls.__name__, True, ScreenManager.BLACK)
+        small_font = pygame.font.Font(None, 18)
+        cost_text = small_font.render(f"{self.cost} Energy", True, ScreenManager.BLACK)
+
+        name_x = self.x + (self.width - name_text.get_width()) // 2
+        cost_x = self.x + (self.width - cost_text.get_width()) // 2
+
+        total_text_height = name_text.get_height() + cost_text.get_height() + 4
+        name_y = self.rect.y + (self.height - total_text_height) // 2 + 2
+        cost_y = name_y + name_text.get_height() + 4
+
+        surface.blit(name_text, (name_x, name_y))
+        surface.blit(cost_text, (cost_x, cost_y))
 
     def try_spawn(self, game):
         if self.is_ready() and game.res_mgr.can_afford(self.cost):
             game.heroes.append(game.create_hero(self.cls))
             game.res_mgr.spend(self.cost)
             self.last = time.time()
+
+
 
 class GameManager:
     def __init__(self):
@@ -417,9 +435,9 @@ class GameManager:
 
         self.hero_buttons = [
             HeroButton(100, Archer, 10, 1),
-            HeroButton(180, Warrior, 15, 2),
-            HeroButton(260, Mage, 20, 3),
-            HeroButton(340, Healer, 15, 2)
+            HeroButton(190, Warrior, 15, 2),
+            HeroButton(280, Mage, 20, 3),
+            HeroButton(370, Healer, 15, 2)
         ]
         self.running = True
 
