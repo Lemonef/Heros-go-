@@ -386,6 +386,7 @@ class ResourceManager:
         self.max_energy = 100
         self.regen_rate = 0.1
         self.upgrade_clicks = 0
+        self.last_upgrade_display_time = 0
 
     def can_afford(self, cost):
         return self.energy >= cost
@@ -400,35 +401,37 @@ class ResourceManager:
                 self.energy = self.max_energy
 
     def upgrade_energy(self):
-        upgrade_cost = 20
+        upgrade_cost = 20 + 10 * self.upgrade_clicks
         if self.upgrade_clicks < 5 and self.energy >= upgrade_cost:
             self.energy -= upgrade_cost
             self.max_energy += 10
             self.regen_rate += 0.01
             self.upgrade_clicks += 1
+            self.last_upgrade_display_time = time.time()
                 
 class UpgradeButton:
     def __init__(self, x, y, width=120, height=55):
         self.rect = pygame.Rect(x, y, width, height)
         self.last_upgrade_time = 0
+        self.last_fail_time = 0
 
     def draw(self, surface, font, res_mgr):
         mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
-        if res_mgr.upgrade_clicks < 5:
-            color = (250, 180, 0)
-            if mouse_over:
-                color = (255, 210, 50)
-        else:
-            color = (150, 150, 150)
+        color = (250, 180, 0) if res_mgr.upgrade_clicks < 5 else (150, 150, 150)
+        if mouse_over and res_mgr.upgrade_clicks < 5:
+            color = (255, 210, 50)
+
         pygame.draw.rect(surface, color, self.rect, border_radius=5)
         pygame.draw.rect(surface, (0,0,0), self.rect, width=2, border_radius=5)
 
-        upgrade_cost = 20
         if res_mgr.upgrade_clicks >= 5:
             label = "Maxed"
         elif time.time() - self.last_upgrade_time < 1:
             label = "Upgraded!"
+        elif time.time() - self.last_fail_time < 1:
+            label = "Not enough!"
         else:
+            upgrade_cost = 20 + 10 * res_mgr.upgrade_clicks
             label = f"Upgrade ({upgrade_cost})"
 
         text = font.render(label, True, (0,0,0))
@@ -438,8 +441,12 @@ class UpgradeButton:
 
     def try_click(self, pos, res_mgr):
         if self.rect.collidepoint(pos) and res_mgr.upgrade_clicks < 5:
-            res_mgr.upgrade_energy()
-            self.last_upgrade_time = time.time()
+            upgrade_cost = 20 + 10 * res_mgr.upgrade_clicks
+            if res_mgr.energy >= upgrade_cost:
+                res_mgr.upgrade_energy()
+                self.last_upgrade_time = time.time()
+            else:
+                self.last_fail_time = time.time()
 
 class HeroButton:
     def __init__(self, x, cls, cost, cooldown):
@@ -506,6 +513,124 @@ class HeroButton:
             game.heroes.append(game.create_hero(self.cls))
             game.res_mgr.spend(self.cost)
             self.last = time.time()
+            
+class MainMenu:
+    def __init__(self, screen_mgr):
+        self.screen_mgr = screen_mgr
+        self.play_button = pygame.Rect(ScreenManager.WIDTH // 2 - 60, ScreenManager.HEIGHT // 2 + 40, 120, 55)
+
+    def draw(self):
+        self.screen_mgr.fill(ScreenManager.WHITE)
+
+        # Instruction text  
+        instructions_text = [
+            "INSTRUCTIONS:",
+            "- Click hero buttons to deploy units (costs energy)",
+            "- Each hero has unique skills and attacks",
+            "- Defeat enemies to protect your base",
+            "- Upgrade energy to increase max and regen rate",
+            "- Destroy enemy base to win!"
+        ]
+
+        font_instr = pygame.font.Font(None, 24)
+        title_font = pygame.font.Font(None, 30)
+        start_y = ScreenManager.HEIGHT // 4 - 50
+
+        for i, line in enumerate(instructions_text):
+            if i == 0:
+                text_surf = title_font.render(line, True, ScreenManager.BLACK)
+            else:
+                text_surf = font_instr.render(line, True, ScreenManager.BLACK)
+            self.screen_mgr.surface.blit(
+                text_surf,
+                (ScreenManager.WIDTH // 2 - text_surf.get_width() // 2,
+                start_y + i * 30)
+            )
+
+        # Draw PLAY button shadow
+        shadow_offset = 4
+        shadow_rect = self.play_button.move(shadow_offset, shadow_offset)
+        pygame.draw.rect(self.screen_mgr.surface, (50, 50, 50), shadow_rect, border_radius=8)
+
+        # Draw PLAY button
+        pygame.draw.rect(self.screen_mgr.surface, (0, 200, 0), self.play_button, border_radius=8)
+        pygame.draw.rect(self.screen_mgr.surface, (0, 0, 0), self.play_button, 2, border_radius=8)
+
+        play_font = pygame.font.Font(None, 32)
+        play_text = play_font.render("PLAY", True, (0, 0, 0))
+        self.screen_mgr.surface.blit(
+            play_text,
+            (self.play_button.centerx - play_text.get_width() // 2,
+            self.play_button.centery - play_text.get_height() // 2)
+        )
+
+        self.screen_mgr.update()
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and self.play_button.collidepoint(event.pos):
+            return "start"
+        return None
+    
+class EndScreen:
+    def __init__(self, screen_mgr, is_victory):
+        self.screen_mgr = screen_mgr
+        self.is_victory = is_victory
+        self.button_rect = pygame.Rect(
+            ScreenManager.WIDTH // 2 - 80,
+            ScreenManager.HEIGHT // 2 + 60,
+            160, 60
+        )
+
+    def draw(self):
+        self.screen_mgr.fill(ScreenManager.WHITE)
+
+        # Title
+        title_font = pygame.font.Font(None, 60)
+        title_text = "VICTORY!" if self.is_victory else "GAME OVER"
+        title_color = ScreenManager.GREEN if self.is_victory else ScreenManager.RED
+        title_surf = title_font.render(title_text, True, title_color)
+
+        self.screen_mgr.surface.blit(
+            title_surf,
+            (ScreenManager.WIDTH // 2 - title_surf.get_width() // 2, ScreenManager.HEIGHT // 3)
+        )
+
+        # Subtitle
+        sub_font = pygame.font.Font(None, 28)
+        sub_text = "You destroyed the enemy base!" if self.is_victory else "Your base was destroyed!"
+        sub_surf = sub_font.render(sub_text, True, ScreenManager.BLACK)
+
+        self.screen_mgr.surface.blit(
+            sub_surf,
+            (ScreenManager.WIDTH // 2 - sub_surf.get_width() // 2, ScreenManager.HEIGHT // 3 + 50)
+        )
+
+        # Button shadow
+        shadow_offset = 4
+        shadow_rect = self.button_rect.move(shadow_offset, shadow_offset)
+        pygame.draw.rect(self.screen_mgr.surface, (50, 50, 50), shadow_rect, border_radius=8)
+
+        # Button
+        pygame.draw.rect(self.screen_mgr.surface, (0, 200, 0), self.button_rect, border_radius=8)
+        pygame.draw.rect(self.screen_mgr.surface, (0, 0, 0), self.button_rect, 2, border_radius=8)
+
+        # Button text
+        button_font = pygame.font.Font(None, 32)
+        button_surf = button_font.render("PLAY AGAIN", True, (0, 0, 0))
+
+        self.screen_mgr.surface.blit(
+            button_surf,
+            (self.button_rect.centerx - button_surf.get_width() // 2,
+             self.button_rect.centery - button_surf.get_height() // 2)
+        )
+
+        self.screen_mgr.update()
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and self.button_rect.collidepoint(event.pos):
+            return "restart"
+        return None
+
 
 class GameManager:
     def __init__(self):
@@ -617,25 +742,67 @@ class GameManager:
         font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
             btn.draw(sm.surface, font, self.res_mgr)
-        sm.surface.blit(font.render(f"Energy: {int(self.res_mgr.energy)} / {int(self.res_mgr.max_energy)}", True, ScreenManager.BLACK), (10, 10))
+        energy_text = f"Energy: {int(self.res_mgr.energy)} / {int(self.res_mgr.max_energy)}"
+        energy_render = font.render(energy_text, True, ScreenManager.BLACK)
+        sm.surface.blit(energy_render, (10, 10))
+        
+        if time.time() - self.res_mgr.last_upgrade_display_time < 1:
+            plus_text = font.render("+10", True, (0, 200, 0))
+            sm.surface.blit(plus_text, (10 + energy_render.get_width() + 5, 10))
         sm.update()
 
 def main():
-    game = GameManager()
-    while game.running:
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT:
-                game.running = False
-            elif e.type == pygame.MOUSEBUTTONDOWN:
+    screen_mgr = ScreenManager()
+    main_menu = MainMenu(screen_mgr)
+    game = None
+    end_screen = None
+    game_state = "menu"
+
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            if game_state == "menu":
+                result = main_menu.handle_event(event)
+                if result == "start":
+                    game = GameManager()
+                    game_state = "playing"
+
+            elif game_state == "playing":
                 for b in game.hero_buttons:
-                    if b.rect.collidepoint(e.pos):
+                    if event.type == pygame.MOUSEBUTTONDOWN and b.rect.collidepoint(event.pos):
                         b.try_spawn(game)
-                game.upgrade_button.try_click(e.pos, game.res_mgr)
-        game.spawn_enemy()
-        game.update()
-        game.draw()
-        game.screen_mgr.tick()
-    game.screen_mgr.quit()
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    game.upgrade_button.try_click(event.pos, game.res_mgr)
+
+            elif game_state == "end":
+                result = end_screen.handle_event(event)
+                if result == "restart":
+                    game = GameManager()  # restart game
+                    game_state = "playing"
+
+        # Drawing
+        if game_state == "menu":
+            main_menu.draw()
+
+        elif game_state == "playing":
+            game.spawn_enemy()
+            game.update()
+            game.draw()
+
+            # Check for game over
+            if not game.running:
+                end_screen = EndScreen(screen_mgr, is_victory=game.enemy_base.health <= 0)
+                game_state = "end"
+
+        elif game_state == "end":
+            end_screen.draw()
+
+        screen_mgr.tick()
+
+    screen_mgr.quit()
 
 if __name__ == "__main__":
     main()
