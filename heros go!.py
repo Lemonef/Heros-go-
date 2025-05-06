@@ -54,15 +54,25 @@ class AnimationManager:
         return s
 
 class Animation:
-    def __init__(self, frames, interval=0.1):
+    def __init__(self, frames, interval=0.1, loop=True):
         self.frames = frames
         self.interval = interval
         self.index = 0
         self.last_time = time.time()
+        self.loop = loop
+        self.finished = False
 
     def update(self):
+        if self.finished:
+            return
         if time.time() - self.last_time >= self.interval:
-            self.index = (self.index + 1) % len(self.frames)
+            self.index += 1
+            if self.index >= len(self.frames):
+                if self.loop:
+                    self.index = 0
+                else:
+                    self.index = len(self.frames) - 1
+                    self.finished = True
             self.last_time = time.time()
 
     def get_frame(self):
@@ -90,8 +100,13 @@ class Attack:
 
     def attack_target(self, target):
         if self.can_attack():
-            target.health -= self.dmg
-            target.alive = target.health > 0
+            if isinstance(target, BaseTarget):
+                target.take_damage(self.dmg)
+            else:
+                target.health -= self.dmg
+                if target.health <= 0:
+                    target.alive = False
+                    target.is_dying = True
             self.last_time = time.time()
     
 class SkillEffect:
@@ -201,6 +216,9 @@ class Hero(Character):
         self.animations = {k: Animation(v) for k, v in anims.items()}
         self.current_state = "move"
         self.skill = skill
+        self.dead_anim = Animation(anims["dead"], loop=False)
+        self.is_dying = False
+        self.ready_to_remove = False
         self.skill_anim_start_time = 0
         self.skill_anim_duration = 0
         self.skill_completed = False
@@ -217,17 +235,22 @@ class Hero(Character):
             self.animations[self.current_state].update()
 
     def draw(self, surface):
+        if self.is_dying and self.dead_anim:
+            frame = self.dead_anim.get_frame()
+            surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
+            return
+
         if self.alive and self.current_state in self.animations:
             self.update_animation()
             frame = self.animations[self.current_state].get_frame()
             surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
-            
+
             if self.current_state == "skill":
                 import math
                 radius = 5 + 1.5 * math.sin(time.time() * 8)
                 center = (int(self.x), int(self.y - 12))
-                pygame.draw.circle(surface, (0, 0, 0), center, int(radius) + 2)  # outline
-                pygame.draw.circle(surface, (255, 255, 0), center, int(radius))  # fill
+                pygame.draw.circle(surface, (0, 0, 0), center, int(radius) + 2)
+                pygame.draw.circle(surface, (255, 255, 0), center, int(radius))
 
     def try_attack(self, target):
         if self.attack.can_attack():
@@ -258,16 +281,26 @@ class Hero(Character):
                     game.projectiles.append(proj)
                     
     def reset_state(self):
-        if self.current_state != "skill": 
-            self.current_state = "move"
+        self.current_state = "move"
 
-    def update(self, enemies, game=None):
-        for e in enemies:
-            if abs(self.x - e.x) < 40:
-                self.try_attack(e)
-                return
-        self.reset_state()
-        self.move()
+    def update(self, enemies, allies, game):
+        self.update_animation()
+
+        if self.current_state == "skill":
+            return 
+
+        in_range = [e for e in enemies if e.alive and abs(self.x - e.x) <= self.attack_range]
+        enemies_in_front = [e for e in in_range if e.x > self.x and not isinstance(e, BaseTarget)]
+
+        if enemies_in_front:
+            target = min(enemies_in_front, key=lambda e: e.x)
+            self.try_attack(target)
+        elif game.enemy_base_target and abs(self.x - game.enemy_base_target.x) <= self.attack_range:
+            self.try_attack(game.enemy_base_target)
+        else:
+            self.reset_state()
+            self.move()
+
 
 
 class Archer(Hero):
@@ -280,22 +313,19 @@ class Archer(Hero):
         self.buff_range = 150
 
     def update(self, enemies, allies, game):
-        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
-        nearby_allies = [a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.buff_range]
+        super().update(enemies, allies, game)
+        nearby_allies = [
+            a for a in allies if a != self and a.alive and abs(self.x - a.x) <= self.buff_range
+        ]
+        self.try_skill(nearby_allies, game)
 
-        if in_range:
-            self.try_attack(in_range[0])
-            self.try_skill(nearby_allies, game)
-        else:
-            self.reset_state()
-            self.move()
 
 class Warrior(Hero):
     def __init__(self, sprites):
         super().__init__("Warrior", 150, 2, 15, 0.5, sprites["Warrior"])
         self.attack_range = 40
 
-    def update(self, enemies, game):
+    def update(self, enemies, allies, game):
         in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
         if in_range:
             self.try_attack(in_range[0])
@@ -311,15 +341,10 @@ class Mage(Hero):
         )
         self.attack_range = 350
 
-    def update(self, enemies, game):
-        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
-        if in_range:
-            self.try_attack(in_range[0])
-            self.try_skill(enemies, game)
-        else:
-            self.reset_state()
-            self.move()
-
+    def update(self, enemies, allies, game):
+        super().update(enemies, allies, game)
+        self.try_skill(enemies, game)
+        
 class Healer(Hero):
     def __init__(self, sprites):
         super().__init__(
@@ -330,15 +355,13 @@ class Healer(Hero):
         self.heal_range = 150
 
     def update(self, enemies, allies, game):
-        in_range = [e for e in enemies if e.alive and abs(self.x - e.x) <= self.attack_range]
-        nearby_allies = [a for a in allies if a != self and a.alive and a.health < a.max_health and abs(self.x - a.x) <= self.heal_range]
+        super().update(enemies, allies, game)
+        nearby_allies = [
+            a for a in allies if a != self and a.alive and a.health < a.max_health and abs(self.x - a.x) <= self.heal_range
+        ]
+        self.try_skill(nearby_allies, game)
 
-        if in_range:
-            self.try_attack(in_range[0])
-            self.try_skill(nearby_allies, game)
-        else:
-            self.reset_state()
-            self.move()
+
 
 class Enemy(Character):
     def __init__(self, image):
@@ -350,10 +373,12 @@ class Enemy(Character):
 
     def update(self, heroes):
         for hero in heroes:
-            hero_center = hero.x + 20  # assuming 40px hero
-            if abs(self.x - hero_center) <= 40:
-                self.attack.attack_target(hero)
-                return
+                if not hero.alive or hero.is_dying:
+                    continue  # skip dead or dying heroes
+                hero_center = hero.x + 20
+                if abs(self.x - hero_center) <= 40:
+                    self.attack.attack_target(hero)
+                    return
         self.move()
 
     def draw(self, surface):
@@ -378,6 +403,25 @@ class Base:
         y_pos = ScreenManager.HEIGHT // 2
         surface.blit(self.image, (self.x, y_pos))
         pygame.draw.rect(surface, ScreenManager.RED, (self.x, y_pos - 20, self.health / 2, 10))
+        
+class BaseTarget(Character):
+    def __init__(self, base: Base):
+        super().__init__(base.x - 20, ScreenManager.HEIGHT // 2, base.health, 0)
+        self.base = base
+
+    def take_damage(self, dmg):
+        self.health -= dmg
+        self.base.health = self.health
+        if self.health <= 0:
+            self.alive = False
+
+    def update(self, heroes):
+        # Does nothing (no movement, no attack)
+        pass
+
+    def draw(self, surface):
+        self.base.draw(surface)
+
 
 
 class ResourceManager:
@@ -640,6 +684,9 @@ class GameManager:
         self.heroes = []
         self.enemies = []
         self.projectiles = []
+        self.dying_heroes = []
+        self.enemy_base_target = BaseTarget(self.enemy_base)
+        self.enemies.append(self.enemy_base_target)
         self.res_mgr = ResourceManager()
         self.enemy_img = AnimationManager.create_enemy_surface()
 
@@ -658,21 +705,25 @@ class GameManager:
                 "move": archer_anims.get("run", []),
                 "attack": archer_anims.get("attack_2", []),
                 "skill": archer_anims.get("idle", []),
+                "dead": archer_anims.get("dead", []),
             },
             "Warrior": {
                 "move": fighter_anims.get("run", []),
                 "attack": fighter_anims.get("attack_2", []),
                 "skill": fighter_anims.get("idle", []),
+                "dead": fighter_anims.get("dead", []),
             },
             "Mage": {
                 "move": mage_anims.get("walk", []),
                 "attack": mage_anims.get("attack_1", []),
                 "skill": mage_anims.get("attack_2", []),
+                "dead": mage_anims.get("dead", []),
             },
             "Healer": {
                 "move": healer_anims.get("walk", []),
                 "attack": healer_anims.get("attack_4", []),
                 "skill": healer_anims.get("scream", []),
+                "dead": healer_anims.get("dead", []),
             }
         }
 
@@ -692,46 +743,47 @@ class GameManager:
     def spawn_enemy(self):
         if random.randint(1, 100) > 98:
             self.enemies.append(Enemy(self.enemy_img))
-
+            
     def update(self):
-        for h in self.heroes:
-            if isinstance(h, (Healer, Archer)):
-                h.update(self.enemies, self.heroes, self)
-            else:
-                h.update(self.enemies, self)
-        for e in self.enemies:
+        for h in self.heroes[:]:
+            h.update(self.enemies, self.heroes, self)
+
+        for e in self.enemies[:]:
             e.update(self.heroes)
+
+            if e.x <= 50 and not getattr(e, "is_dying", False):
+                self.player_base.health -= 5
+                e.alive = False
+                e.is_dying = True
+                self.enemies.remove(e)
+
         for proj in self.projectiles:
             proj.update()
         self.projectiles = [p for p in self.projectiles if p.alive]
 
-        self.heroes = [h for h in self.heroes if h.alive]
-        self.enemies = [e for e in self.enemies if e.alive]
+        for h in self.heroes[:]:
+            if h.is_dying:
+                self.dying_heroes.append(h)
+                self.heroes.remove(h)
 
-        for h in self.heroes:
-            if h.x >= ScreenManager.WIDTH - 60:
-                self.enemy_base.health -= 5
-                h.alive = False
-        for e in self.enemies:
-            if e.x <= 50:
-                self.player_base.health -= 5
-                e.alive = False
+        for h in self.dying_heroes[:]:
+            h.dead_anim.update()
+            if h.dead_anim.finished:
+                self.dying_heroes.remove(h)
 
         self.res_mgr.regenerate()
 
         if self.player_base.health <= 0:
             self.running = False
-            print("Game Over! You lost!")
         elif self.enemy_base.health <= 0:
             self.running = False
-            print("Victory! You won!")
+
 
     def draw(self):
         sm = self.screen_mgr
         font = pygame.font.Font(None, 24)
         sm.surface.blit(self.background, (0, 0))
         self.player_base.draw(sm.surface)
-        self.enemy_base.draw(sm.surface)
         self.upgrade_button.draw(sm.surface, font, self.res_mgr)
         for proj in self.projectiles:
             proj.draw(self.screen_mgr.surface)
@@ -739,6 +791,8 @@ class GameManager:
             h.draw(sm.surface)
         for e in self.enemies:
             e.draw(sm.surface)
+        for h in self.dying_heroes:
+            h.draw(sm.surface)
         font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
             btn.draw(sm.surface, font, self.res_mgr)
