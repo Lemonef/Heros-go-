@@ -326,12 +326,9 @@ class Warrior(Hero):
         self.attack_range = 40
 
     def update(self, enemies, allies, game):
-        in_range = [e for e in enemies if abs(self.x - e.x) <= self.attack_range and e.alive]
-        if in_range:
-            self.try_attack(in_range[0])
-        else:
-            self.reset_state()
-            self.move()
+        super().update(enemies, allies, game)
+
+
 
 class Mage(Hero):
     def __init__(self, sprites):
