@@ -47,12 +47,6 @@ class AnimationManager:
                 animations[key] = AnimationManager.load_sprite_strip(os.path.join(folder, file))
         return animations
 
-    @staticmethod
-    def create_enemy_surface():
-        s = pygame.Surface((40, 40))
-        s.fill(ScreenManager.RED)
-        return s
-
 class Animation:
     def __init__(self, frames, interval=0.1, loop=True):
         self.frames = frames
@@ -126,8 +120,15 @@ class AreaDamageEffect(SkillEffect):
                     t.alive = False
 
 class BuffAttackSpeedEffect(SkillEffect):
+    def __init__(self, buff_amount=0.5, duration=5):
+        self.buff_amount = buff_amount
+        self.duration = duration
     def apply(self, user, targets):
-        pass
+        for ally in targets:
+            if not hasattr(ally, "original_cooldown"):
+                ally.original_cooldown = ally.attack.cooldown
+            ally.attack.cooldown = max(0.1, ally.attack.cooldown - self.buff_amount)
+            ally.buff_end_time = time.time() + self.duration
 
 class GroupHealEffect(SkillEffect):
     def __init__(self, heal_amount=15):
@@ -284,12 +285,23 @@ class Hero(Character):
         self.current_state = "move"
 
     def update(self, enemies, allies, game):
+        if hasattr(self, "buff_end_time") and time.time() >= self.buff_end_time:
+            if hasattr(self, "original_cooldown"):
+                self.attack.cooldown = self.original_cooldown
+                del self.buff_end_time
+                del self.original_cooldown
+                
         self.update_animation()
 
         if self.current_state == "skill":
             return 
 
-        in_range = [e for e in enemies if e.alive and abs(self.x - e.x) <= self.attack_range]
+        in_range = [
+            e for e in enemies
+            if e.alive
+            and abs(self.x - e.x) <= self.attack_range
+            and abs(self.y - e.y) <= 40   # <-- add vertical check!
+        ]
         enemies_in_front = [e for e in in_range if e.x > self.x and not isinstance(e, BaseTarget)]
 
         if enemies_in_front:
@@ -358,29 +370,44 @@ class Healer(Hero):
         ]
         self.try_skill(nearby_allies, game)
 
-
-
 class Enemy(Character):
-    def __init__(self, image):
-        center_x = ScreenManager.WIDTH - 50
-        super().__init__(center_x, ScreenManager.HEIGHT // 2, 30, -1.5)
-        self.attack = Attack(5, 1)
-        self.image = image
-        self.width = self.image.get_width()
+    def __init__(self, anims):
+        sprite_height = anims["move"][0].get_height()
+        y = (ScreenManager.HEIGHT // 2 + 50) - sprite_height
+        super().__init__(ScreenManager.WIDTH - 50, y, 200, -1.5)
+        self.attack = Attack(20, 0.5)
+        self.animations = {k: Animation(v) for k, v in anims.items()}
+        self.current_state = "move"
+        self.is_dying = False
+        self.dead_anim = Animation(anims.get("dead", []), loop=False)
 
     def update(self, heroes):
+        if self.is_dying:
+            return
+        self.animations[self.current_state].update()
+
         for hero in heroes:
-                if not hero.alive or hero.is_dying:
-                    continue  # skip dead or dying heroes
-                hero_center = hero.x + 20
-                if abs(self.x - hero_center) <= 40:
-                    self.attack.attack_target(hero)
-                    return
+            if not hero.alive or hero.is_dying:
+                continue
+            hero_center = hero.x + 20
+            if abs(self.x - hero_center) <= 40:
+                self.attack.attack_target(hero)
+                return
         self.move()
 
     def draw(self, surface):
-        if self.alive:
-            surface.blit(self.image, (self.x - self.image.get_width() // 2, self.y))
+        if self.is_dying and self.dead_anim:
+            if self.dead_anim.finished:
+                return
+            frame = self.dead_anim.get_frame()
+            surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
+            return
+
+        if self.alive and self.current_state in self.animations:
+            self.animations[self.current_state].update()
+            frame = self.animations[self.current_state].get_frame()
+            surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
+
 
 
 class Base:
@@ -405,7 +432,11 @@ class BaseTarget(Character):
     def __init__(self, base: Base):
         super().__init__(base.x - 20, ScreenManager.HEIGHT // 2, base.health, 0)
         self.base = base
+        self.is_dying = False
+        self.dead_anim = Animation([], loop=False)  # empty animation
+        self.dead_anim.finished = True  # instantly mark as finished
 
+        
     def take_damage(self, dmg):
         self.health -= dmg
         self.base.health = self.health
@@ -682,10 +713,32 @@ class GameManager:
         self.enemies = []
         self.projectiles = []
         self.dying_heroes = []
+        self.dying_enemies = []
         self.enemy_base_target = BaseTarget(self.enemy_base)
         self.enemies.append(self.enemy_base_target)
         self.res_mgr = ResourceManager()
-        self.enemy_img = AnimationManager.create_enemy_surface()
+        
+        blue_slime_anims = AnimationManager.load_animations_from_folder("assets/Enemy/Blue_Slime")
+        green_slime_anims = AnimationManager.load_animations_from_folder("assets/Enemy/Green_Slime")
+        red_slime_anims = AnimationManager.load_animations_from_folder("assets/Enemy/Red_Slime")
+    
+        self.enemy_sprites = {
+            "Blue_Slime": {
+                "move": blue_slime_anims.get("run", []),
+                "attack": blue_slime_anims.get("attack_1", []),
+                "dead": blue_slime_anims.get("dead", []),
+            },
+            "Green_Slime": {
+                "move": green_slime_anims.get("run", []),
+                "attack": green_slime_anims.get("attack_1", []),
+                "dead": green_slime_anims.get("dead", []),
+            },
+            "Red_Slime": {
+                "move": red_slime_anims.get("run", []),
+                "attack": red_slime_anims.get("attack_1", []),
+                "dead": red_slime_anims.get("dead", []),
+            }
+        }        
 
         fighter_anims = AnimationManager.load_animations_from_folder("assets/Fighter")
         archer_anims = AnimationManager.load_animations_from_folder("assets/Samurai")
@@ -725,8 +778,8 @@ class GameManager:
         }
 
         self.hero_buttons = [
-            HeroButton(100, Archer, 10, 1),
-            HeroButton(190, Warrior, 15, 2),
+            HeroButton(100, Archer, 20, 3),
+            HeroButton(190, Warrior, 10, 2),
             HeroButton(280, Mage, 20, 3),
             HeroButton(370, Healer, 15, 2)
         ]
@@ -736,11 +789,21 @@ class GameManager:
 
     def create_hero(self, cls):
         return cls(self.hero_sprites)
-
+    
     def spawn_enemy(self):
-        if random.randint(1, 100) > 98:
-            self.enemies.append(Enemy(self.enemy_img))
-            
+        now = time.time()
+        if not hasattr(self, 'last_spawn_time'):
+            self.last_spawn_time = now
+        if not hasattr(self, 'spawn_interval'):
+            self.spawn_interval = random.uniform(0.5, 2.0)
+
+        if now - self.last_spawn_time >= self.spawn_interval:
+            enemy_type = random.choice(["Blue_Slime", "Green_Slime", "Red_Slime"])
+            enemy_anims = self.enemy_sprites[enemy_type]
+            self.enemies.append(Enemy(enemy_anims))
+            self.last_spawn_time = now
+            self.spawn_interval = random.uniform(0.5, 2.0)
+                
     def update(self):
         for h in self.heroes[:]:
             h.update(self.enemies, self.heroes, self)
@@ -748,11 +811,19 @@ class GameManager:
         for e in self.enemies[:]:
             e.update(self.heroes)
 
-            if e.x <= 50 and not getattr(e, "is_dying", False):
+            if not e.alive and not e.is_dying:
+                e.is_dying = True
+
+            elif e.x <= 50 and not e.is_dying:
                 self.player_base.health -= 5
                 e.alive = False
                 e.is_dying = True
-                self.enemies.remove(e)
+
+        for e in self.enemies[:]:
+            if e.is_dying:
+                e.dead_anim.update()
+                if e.dead_anim.finished:
+                    self.enemies.remove(e)
 
         for proj in self.projectiles:
             proj.update()
@@ -776,6 +847,7 @@ class GameManager:
             self.running = False
 
 
+
     def draw(self):
         sm = self.screen_mgr
         font = pygame.font.Font(None, 24)
@@ -790,6 +862,9 @@ class GameManager:
             e.draw(sm.surface)
         for h in self.dying_heroes:
             h.draw(sm.surface)
+        for e in self.dying_enemies:
+            e.draw(sm.surface)
+
         font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
             btn.draw(sm.surface, font, self.res_mgr)
