@@ -246,12 +246,23 @@ class Hero(Character):
             frame = self.animations[self.current_state].get_frame()
             surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
 
+            # Draw HP bar above hero
+            bar_width = 40
+            bar_height = 6
+            health_ratio = self.health / self.max_health
+            hp_x = self.x - bar_width // 2
+            hp_y = self.y + 30
+            pygame.draw.rect(surface, (0, 0, 0), (hp_x - 1, hp_y - 1, bar_width + 2, bar_height + 2))  # border
+            pygame.draw.rect(surface, (200, 0, 0), (hp_x, hp_y, bar_width, bar_height))  # background
+            pygame.draw.rect(surface, (0, 200, 0), (hp_x, hp_y, int(bar_width * health_ratio), bar_height))  # current HP
+
             if self.current_state == "skill":
                 import math
                 radius = 5 + 1.5 * math.sin(time.time() * 8)
                 center = (int(self.x), int(self.y - 12))
                 pygame.draw.circle(surface, (0, 0, 0), center, int(radius) + 2)
                 pygame.draw.circle(surface, (255, 255, 0), center, int(radius))
+
 
     def try_attack(self, target):
         if self.attack.can_attack():
@@ -407,6 +418,16 @@ class Enemy(Character):
             self.animations[self.current_state].update()
             frame = self.animations[self.current_state].get_frame()
             surface.blit(frame, (self.x - frame.get_width() // 2, self.y))
+
+            bar_width = 40
+            bar_height = 6
+            health_ratio = self.health / self.max_health
+            hp_x = self.x - bar_width // 2
+            hp_y = self.y + 80
+            pygame.draw.rect(surface, (0, 0, 0), (hp_x - 1, hp_y - 1, bar_width + 2, bar_height + 2))
+            pygame.draw.rect(surface, (200, 0, 0), (hp_x, hp_y, bar_width, bar_height))
+            pygame.draw.rect(surface, (0, 200, 0), (hp_x, hp_y, int(bar_width * health_ratio), bar_height))
+
 
 
 
