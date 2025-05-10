@@ -2,6 +2,9 @@ import pygame
 import random
 import time
 import os
+import csv
+import time
+from collections import defaultdict
 
 class ScreenManager:
     WIDTH, HEIGHT = 800, 400
@@ -71,6 +74,98 @@ class Animation:
 
     def get_frame(self):
         return self.frames[self.index]
+
+import csv
+import json
+import os
+import time
+from collections import defaultdict
+
+class Tracker:
+    def __init__(self, csv_filename="game_data.csv"):
+        self.csv_filename = csv_filename
+        self.snapshot_data = []
+        self.last_snapshot_time = time.time()
+
+        self.enemies_defeated = 0
+        self.hero_spawn_counter = defaultdict(int)
+        self.ability_usage_counter = defaultdict(int)
+        self.energy_spent = 0
+        self.heroes_defeated = 0
+
+        self.initialize_csv_if_needed()
+
+    def initialize_csv_if_needed(self):
+        if not os.path.exists(self.csv_filename):
+            with open(self.csv_filename, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "Timestamp", "TotalEnergyUsed", "EnemiesDefeated",
+                    "HeroesDefeated", "MostSpawnedHero", "MostSpawnedCount",
+                    "Attack_speed_Buff_Used", "AOE_Used", "GroupHeal_Used"
+                ])
+            print(f"[Tracker] CSV initialized with header: {self.csv_filename}")
+        else:
+            print(f"[Tracker] CSV file already exists: {self.csv_filename}")
+
+    def log_hero_defeated(self):
+        self.heroes_defeated += 1
+
+    def log_hero_spawn_count(self, hero_name):
+        self.hero_spawn_counter[hero_name] += 1
+
+    def log_ability_used(self, skill_name):
+        self.ability_usage_counter[skill_name] += 1
+
+    def log_enemy_defeated(self):
+        self.enemies_defeated += 1
+
+    def log_energy_spent(self, amount):
+        self.energy_spent += amount 
+
+    def try_snapshot(self):
+        now = time.time()
+        if now - self.last_snapshot_time >= 5:
+            most_spawned = max(self.hero_spawn_counter.items(), key=lambda x: x[1], default=("None", 0))
+
+            # Extract counts safely
+            archer_count = self.ability_usage_counter.get("Buff", 0)
+            mage_count = self.ability_usage_counter.get("AOE", 0)
+            healer_count = self.ability_usage_counter.get("Group Heal", 0)
+
+            self.snapshot_data.append([
+                now,
+                self.energy_spent,
+                self.enemies_defeated,
+                self.heroes_defeated,
+                most_spawned[0],
+                most_spawned[1],
+                archer_count,
+                mage_count,
+                healer_count
+            ])
+            print(f"[Tracker] Snapshot taken at {now}")
+
+            # Reset counters
+            self.heroes_defeated = 0
+            self.enemies_defeated = 0
+            self.hero_spawn_counter.clear()
+            self.ability_usage_counter.clear()
+            self.last_snapshot_time = now
+
+    def append_new_rows(self):
+        if not self.snapshot_data:
+            print("[Tracker] No new data to save.")
+            return
+
+        with open(self.csv_filename, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(self.snapshot_data)
+        print(f"[Tracker] {len(self.snapshot_data)} new rows appended to {self.csv_filename}")
+
+        self.snapshot_data.clear()
+
+
 
 class Character:
     def __init__(self, x, y, health, speed):
@@ -273,6 +368,7 @@ class Hero(Character):
         if self.skill and self.skill.can_use_skill():
             self.current_state = "skill"
             self.skill.use(self, targets)
+            game.tracker.log_ability_used(self.skill.name)
             self.skill_anim_start_time = time.time()
             self.skill_anim_duration = self.skill.cast_duration
             self.skill_completed = False
@@ -603,17 +699,26 @@ class HeroButton:
 
     def try_spawn(self, game):
         if self.is_ready() and game.res_mgr.can_afford(self.cost):
-            game.heroes.append(game.create_hero(self.cls))
+            hero = game.create_hero(self.cls)
+            game.heroes.append(hero)
             game.res_mgr.spend(self.cost)
+            game.tracker.log_energy_spent(self.cost)
             self.last = time.time()
+
             
 class MainMenu:
     def __init__(self, screen_mgr):
         self.screen_mgr = screen_mgr
-        self.play_button = pygame.Rect(ScreenManager.WIDTH // 2 - 60, ScreenManager.HEIGHT // 2 + 40, 120, 55)
+        self.play_button = pygame.Rect(ScreenManager.WIDTH // 2 - 60,
+                                       ScreenManager.HEIGHT // 2 + 100, 120, 55)
+        
+        full_bg = pygame.image.load("assets/Background/Stage3.png").convert()
+        cropped_height = full_bg.get_height() - 50
+        cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
+        self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
 
     def draw(self):
-        self.screen_mgr.fill(ScreenManager.WHITE)
+        self.screen_mgr.surface.blit(self.background, (0, 0))
 
         # Instruction text  
         instructions_text = [
@@ -627,7 +732,7 @@ class MainMenu:
 
         font_instr = pygame.font.Font(None, 24)
         title_font = pygame.font.Font(None, 30)
-        start_y = ScreenManager.HEIGHT // 4 - 50
+        start_y = ScreenManager.HEIGHT // 4 - 0
 
         for i, line in enumerate(instructions_text):
             if i == 0:
@@ -669,20 +774,29 @@ class EndScreen:
         self.screen_mgr = screen_mgr
         self.is_victory = is_victory
         self.button_rect = pygame.Rect(
-            ScreenManager.WIDTH // 2 - 80,
+            ScreenManager.WIDTH // 2 - 180,
             ScreenManager.HEIGHT // 2 + 60,
             160, 60
         )
+        self.home_button_rect = pygame.Rect(
+            ScreenManager.WIDTH // 2 + 20,
+            ScreenManager.HEIGHT // 2 + 60,
+            160, 60
+        )
+        
+        full_bg = pygame.image.load("assets/Background/Stage2.png").convert()
+        cropped_height = full_bg.get_height() - 50
+        cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
+        self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
 
     def draw(self):
-        self.screen_mgr.fill(ScreenManager.WHITE)
+        self.screen_mgr.surface.blit(self.background, (0, 0))
 
         # Title
         title_font = pygame.font.Font(None, 60)
         title_text = "VICTORY!" if self.is_victory else "GAME OVER"
         title_color = ScreenManager.GREEN if self.is_victory else ScreenManager.RED
         title_surf = title_font.render(title_text, True, title_color)
-
         self.screen_mgr.surface.blit(
             title_surf,
             (ScreenManager.WIDTH // 2 - title_surf.get_width() // 2, ScreenManager.HEIGHT // 3)
@@ -692,42 +806,44 @@ class EndScreen:
         sub_font = pygame.font.Font(None, 28)
         sub_text = "You destroyed the enemy base!" if self.is_victory else "Your base was destroyed!"
         sub_surf = sub_font.render(sub_text, True, ScreenManager.BLACK)
-
         self.screen_mgr.surface.blit(
             sub_surf,
             (ScreenManager.WIDTH // 2 - sub_surf.get_width() // 2, ScreenManager.HEIGHT // 3 + 50)
         )
 
-        # Button shadow
-        shadow_offset = 4
-        shadow_rect = self.button_rect.move(shadow_offset, shadow_offset)
-        pygame.draw.rect(self.screen_mgr.surface, (50, 50, 50), shadow_rect, border_radius=8)
+        # Button shadow & buttons
+        for rect, label in [
+            (self.button_rect, "PLAY AGAIN"),
+            (self.home_button_rect, "HOME")
+        ]:
+            shadow_offset = 4
+            shadow_rect = rect.move(shadow_offset, shadow_offset)
+            pygame.draw.rect(self.screen_mgr.surface, (50, 50, 50), shadow_rect, border_radius=8)
+            pygame.draw.rect(self.screen_mgr.surface, (0, 200, 0), rect, border_radius=8)
+            pygame.draw.rect(self.screen_mgr.surface, (0, 0, 0), rect, 2, border_radius=8)
 
-        # Button
-        pygame.draw.rect(self.screen_mgr.surface, (0, 200, 0), self.button_rect, border_radius=8)
-        pygame.draw.rect(self.screen_mgr.surface, (0, 0, 0), self.button_rect, 2, border_radius=8)
-
-        # Button text
-        button_font = pygame.font.Font(None, 32)
-        button_surf = button_font.render("PLAY AGAIN", True, (0, 0, 0))
-
-        self.screen_mgr.surface.blit(
-            button_surf,
-            (self.button_rect.centerx - button_surf.get_width() // 2,
-             self.button_rect.centery - button_surf.get_height() // 2)
-        )
+            button_font = pygame.font.Font(None, 32)
+            button_surf = button_font.render(label, True, (0, 0, 0))
+            self.screen_mgr.surface.blit(
+                button_surf,
+                (rect.centerx - button_surf.get_width() // 2,
+                 rect.centery - button_surf.get_height() // 2)
+            )
 
         self.screen_mgr.update()
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and self.button_rect.collidepoint(event.pos):
-            return "restart"
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.button_rect.collidepoint(event.pos):
+                return "restart"
+            if self.home_button_rect.collidepoint(event.pos):
+                return "home"
         return None
-
 
 class GameManager:
     def __init__(self):
         self.screen_mgr = ScreenManager()
+        self.tracker = Tracker()
         self.player_base = Base(10, ScreenManager.GREEN, "assets/Base/Base1.png", scale_factor=6)
         self.enemy_base = Base(ScreenManager.WIDTH - 60, ScreenManager.RED, "assets/Base/Base2.png", scale_factor=3)
         self.heroes = []
@@ -809,7 +925,10 @@ class GameManager:
         self.running = True
 
     def create_hero(self, cls):
-        return cls(self.hero_sprites)
+        hero = cls(self.hero_sprites)
+        self.tracker.log_hero_spawn_count(hero.name)
+        return hero
+
     
     def spawn_enemy(self):
         now = time.time()
@@ -831,9 +950,11 @@ class GameManager:
 
         for e in self.enemies[:]:
             e.update(self.heroes)
-
-            if not e.alive and not e.is_dying:
-                e.is_dying = True
+            
+            if not e.alive and not getattr(e, "_death_logged", False):
+                if not isinstance(e, BaseTarget):
+                    self.tracker.log_enemy_defeated()
+                e._death_logged = True 
 
             elif e.x <= 50 and not e.is_dying:
                 self.player_base.health -= 5
@@ -852,6 +973,7 @@ class GameManager:
 
         for h in self.heroes[:]:
             if h.is_dying:
+                self.tracker.log_hero_defeated()
                 self.dying_heroes.append(h)
                 self.heroes.remove(h)
 
@@ -866,8 +988,8 @@ class GameManager:
             self.running = False
         elif self.enemy_base.health <= 0:
             self.running = False
-
-
+            
+        self.tracker.try_snapshot()
 
     def draw(self):
         sm = self.screen_mgr
@@ -928,7 +1050,10 @@ def main():
                 result = end_screen.handle_event(event)
                 if result == "restart":
                     game = GameManager()  # restart game
+                    game.tracker.snapshot_data.clear()
                     game_state = "playing"
+                elif result == "home":
+                    game_state = "menu"
 
         # Drawing
         if game_state == "menu":
@@ -941,6 +1066,7 @@ def main():
 
             # Check for game over
             if not game.running:
+                game.tracker.append_new_rows()
                 end_screen = EndScreen(screen_mgr, is_victory=game.enemy_base.health <= 0)
                 game_state = "end"
 
@@ -948,6 +1074,10 @@ def main():
             end_screen.draw()
 
         screen_mgr.tick()
+
+    if game:
+        print("Saving CSV data...")
+        game.tracker.append_new_rows()
 
     screen_mgr.quit()
 
