@@ -4,7 +4,9 @@ import time
 import os
 import csv
 import time
+import tkinter as tk
 from collections import defaultdict
+from settings_window import SettingsWindow
 
 class ScreenManager:
     WIDTH, HEIGHT = 800, 400
@@ -74,12 +76,6 @@ class Animation:
 
     def get_frame(self):
         return self.frames[self.index]
-
-import csv
-import json
-import os
-import time
-from collections import defaultdict
 
 class Tracker:
     def __init__(self, csv_filename="game_data.csv"):
@@ -525,8 +521,6 @@ class Enemy(Character):
             pygame.draw.rect(surface, (0, 200, 0), (hp_x, hp_y, int(bar_width * health_ratio), bar_height))
 
 
-
-
 class Base:
     def __init__(self, x, color, image_path, scale_factor=6):
         self.x = x
@@ -854,6 +848,9 @@ class GameManager:
         self.enemy_base_target = BaseTarget(self.enemy_base)
         self.enemies.append(self.enemy_base_target)
         self.res_mgr = ResourceManager()
+        self.tk_root = tk.Tk()
+        self.tk_root.withdraw()
+        self.settings = SettingsWindow(self, self.tk_root)
         
         blue_slime_anims = AnimationManager.load_animations_from_folder("assets/Enemy/Blue_Slime")
         green_slime_anims = AnimationManager.load_animations_from_folder("assets/Enemy/Green_Slime")
@@ -922,6 +919,9 @@ class GameManager:
         ]
         
         self.upgrade_button = UpgradeButton(520, ScreenManager.HEIGHT - 70, width=160)
+        self.settings_button = pygame.Rect(ScreenManager.WIDTH - 120, 10, 100, 40)
+        
+        self.paused = False
         self.running = True
 
     def create_hero(self, cls):
@@ -945,6 +945,8 @@ class GameManager:
             self.spawn_interval = random.uniform(0.5, 2.0)
                 
     def update(self):
+        if self.paused:
+            return
         for h in self.heroes[:]:
             h.update(self.enemies, self.heroes, self)
 
@@ -1014,11 +1016,20 @@ class GameManager:
         energy_text = f"Energy: {int(self.res_mgr.energy)} / {int(self.res_mgr.max_energy)}"
         energy_render = font.render(energy_text, True, ScreenManager.BLACK)
         sm.surface.blit(energy_render, (10, 10))
+
+        pygame.draw.rect(sm.surface, (200, 200, 200), self.settings_button, border_radius=5)
+        pygame.draw.rect(sm.surface, (0, 0, 0), self.settings_button, 2, border_radius=5)
+        font = pygame.font.Font(None, 24)
+        text = font.render("Settings", True, (0, 0, 0))
+        text_rect = text.get_rect(center=self.settings_button.center)
+        sm.surface.blit(text, text_rect)
+
         
         if time.time() - self.res_mgr.last_upgrade_display_time < 1:
             plus_text = font.render("+10", True, (0, 200, 0))
             sm.surface.blit(plus_text, (10 + energy_render.get_width() + 5, 10))
         sm.update()
+        
 
 def main():
     screen_mgr = ScreenManager()
@@ -1032,6 +1043,10 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE and game_state == "playing":
+                    game.settings.run()
 
             if game_state == "menu":
                 result = main_menu.handle_event(event)
@@ -1045,6 +1060,10 @@ def main():
                         b.try_spawn(game)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     game.upgrade_button.try_click(event.pos, game.res_mgr)
+
+                    if game.settings_button.collidepoint(event.pos):
+                        game.settings.run()
+
 
             elif game_state == "end":
                 result = end_screen.handle_event(event)
@@ -1060,8 +1079,9 @@ def main():
             main_menu.draw()
 
         elif game_state == "playing":
-            game.spawn_enemy()
-            game.update()
+            if not game.paused:
+                game.spawn_enemy()
+                game.update()
             game.draw()
 
             # Check for game over
@@ -1069,11 +1089,17 @@ def main():
                 game.tracker.append_new_rows()
                 end_screen = EndScreen(screen_mgr, is_victory=game.enemy_base.health <= 0)
                 game_state = "end"
+                continue
 
         elif game_state == "end":
             end_screen.draw()
 
         screen_mgr.tick()
+        if game:
+            try:
+                game.tk_root.update()
+            except tk.TclError:
+                pass
 
     if game:
         print("Saving CSV data...")
