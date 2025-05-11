@@ -34,6 +34,7 @@ python "heros go!.py"
 - Deploy heroes: Archer, Warrior, Mage, Healer
 - Use strategic skills: Buffs, AOE attacks, Group Heals
 - Defend your base and destroy the enemy base to win
+- Win a stage to unlock the next, where enemies become stronger
 
 ---
 

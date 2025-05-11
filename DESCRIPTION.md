@@ -10,6 +10,7 @@ Battle Heroes Defense is a 2D side-scrolling tower defense game inspired by Line
 - Each hero summon button has an individual cooldown.
 - AI-controlled enemies spawn and move toward the player base.
 - Use tactics and timing to defeat the enemy base before losing your own.
+- **Advance Stages** – After each victory, the player can proceed to the next stage where enemies become stronger (increased health), adding difficulty over time.
 
 ## UML Diagram
 ```html
