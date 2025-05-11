@@ -59,11 +59,12 @@ class MainMenu(Menu):
             "- Each hero has unique skills and attacks",
             "- Defeat enemies to protect your base",
             "- Upgrade energy to increase max and regen rate",
+            "- Win to advance to the next stage!",
             "- Destroy enemy base to win!"
         ]
         font_title = pygame.font.Font(None, 30)
         font_instr = pygame.font.Font(None, 22)
-        y_start = ScreenManager.HEIGHT // 4
+        y_start = ScreenManager.HEIGHT // 4 - 20
         for i, line in enumerate(instructions):
             font = font_title if i == 0 else font_instr
             surf = font.render(line, True, ScreenManager.BLACK)
@@ -89,11 +90,23 @@ class EndScreen(Menu):
         )
         self.buttons = [self.play_again_btn, self.home_btn, self.quit_btn]
 
+        if self.is_victory is True:
+            self.next_stage_btn = Button(
+                rect=(ScreenManager.WIDTH - 150, 10, 130, 45),
+                label="NEXT STAGE",
+                on_click=self.next_stage,
+                color=(0, 150, 250)
+            )
+            self.buttons.insert(0, self.next_stage_btn)
+
     def restart_game(self):
         self.result = "restart"
 
     def go_home(self):
         self.result = "home"
+
+    def next_stage(self):
+        self.result = "next_stage"
 
     def quit_game(self):
         pygame.quit()
@@ -104,6 +117,7 @@ class EndScreen(Menu):
         super().draw_background()
         font_title = pygame.font.Font(None, 60)
         font_sub = pygame.font.Font(None, 28)
+
         if self.is_victory is None:
             title = "BATTLE QUIT"
             subtitle = "You exited the game early."
@@ -116,10 +130,13 @@ class EndScreen(Menu):
             title = "GAME OVER"
             subtitle = "Your base was destroyed!"
             color = ScreenManager.RED
+
         title_surf = font_title.render(title, True, color)
         subtitle_surf = font_sub.render(subtitle, True, ScreenManager.BLACK)
+
         surface = self.screen_mgr.surface
         surface.blit(title_surf, (ScreenManager.WIDTH // 2 - title_surf.get_width() // 2, ScreenManager.HEIGHT // 3))
         surface.blit(subtitle_surf, (ScreenManager.WIDTH // 2 - subtitle_surf.get_width() // 2, ScreenManager.HEIGHT // 3 + 50))
+
         super().draw_buttons()
         self.screen_mgr.update()

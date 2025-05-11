@@ -74,6 +74,10 @@ class GameManager:
         self.paused = False
         self.running = True
         self.was_forced_quit = False
+        
+        self.stage = 1
+        self.enemy_hp_scale = {1: 100, 2: 200, 3: 300, 4: 400, 5: 500}
+
 
     def create_hero(self, cls):
         hero = cls(self.hero_sprites)
@@ -90,7 +94,9 @@ class GameManager:
         if now - self.last_spawn_time >= self.spawn_interval:
             choice = random.choice(list(self.enemy_sprites.keys()))
             anims = self.enemy_sprites[choice]
-            self.enemies.append(Enemy(anims))
+            enemy = Enemy(anims)
+            enemy.health = enemy.max_health = self.enemy_hp_scale.get(self.stage, 200)
+            self.enemies.append(enemy)
             self.last_spawn_time = now
             self.spawn_interval = random.uniform(0.5, 2.0)
 
@@ -164,6 +170,9 @@ class GameManager:
         energy_text = f"Energy: {int(self.res_mgr.energy)} / {int(self.res_mgr.max_energy)}"
         energy_render = font.render(energy_text, True, ScreenManager.BLACK)
         sm.surface.blit(energy_render, (10, 10))
+        stage_text = font.render(f"Stage: {self.stage}", True, ScreenManager.BLACK)
+        sm.surface.blit(stage_text, (ScreenManager.WIDTH // 2 - stage_text.get_width() // 2, 10))
+        
         self.settings_button.draw(sm.surface)
 
         if time.time() - self.res_mgr.last_upgrade_display_time < 1:
@@ -213,6 +222,11 @@ def main():
                 elif result == "home":
                     main_menu = MainMenu(screen_mgr)
                     game_state = "menu"
+                elif result == "next_stage":
+                    stage = game.stage + 1
+                    game = GameManager()
+                    game.stage = stage
+                    game_state = "playing"
 
         if game_state == "menu":
             main_menu.draw()
