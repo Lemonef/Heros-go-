@@ -15,7 +15,6 @@ class StatsVisualizer:
 
     @staticmethod
     def launch_in_new_process():
-        from visualizer import StatsVisualizer
         vis = StatsVisualizer()
         vis.show()
 
@@ -26,25 +25,20 @@ class StatsVisualizer:
         self.root = tk.Tk()
         self.root.title("Battle Heroes Defense Analytics")
         self.root.geometry("1000x600")
-
         self.status_label = ttk.Label(self.root, text="Loading stats...", anchor='center')
         self.status_label.pack(expand=True)
-
         self.root.after(10, self._build_ui_async)
         self.root.mainloop()
 
     def _build_ui_async(self):
         self.status_label.destroy()
         self.df = pd.read_csv(self.csv_path)
-
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill='both', expand=True)
-
         self._plot_enemies_vs_heroes(notebook)
         self._plot_energy(notebook)
         self._plot_abilities(notebook)
         self._plot_most_spawned(notebook)
-
         ttk.Button(self.root, text="Close", command=self.root.destroy).pack(pady=10)
 
     def _plot_enemies_vs_heroes(self, notebook):
