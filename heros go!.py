@@ -73,6 +73,7 @@ class GameManager:
 
         self.paused = False
         self.running = True
+        self.was_forced_quit = False
 
     def create_hero(self, cls):
         hero = cls(self.hero_sprites)
@@ -222,7 +223,10 @@ def main():
             game.draw()
             if not game.running:
                 game.tracker.append_new_rows()
-                end_screen = EndScreen(screen_mgr, is_victory=game.enemy_base.health <= 0)
+                if game.was_forced_quit:
+                    end_screen = EndScreen(screen_mgr, is_victory=None)
+                else:
+                    end_screen = EndScreen(screen_mgr, is_victory=game.enemy_base.health <= 0)
                 game_state = "end"
                 continue
         elif game_state == "end":
@@ -236,7 +240,6 @@ def main():
                 pass
 
     if game:
-        print("Saving CSV data...")
         game.tracker.append_new_rows()
     screen_mgr.quit()
 

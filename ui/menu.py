@@ -104,9 +104,18 @@ class EndScreen(Menu):
         super().draw_background()
         font_title = pygame.font.Font(None, 60)
         font_sub = pygame.font.Font(None, 28)
-        title = "VICTORY!" if self.is_victory else "GAME OVER"
-        subtitle = "You destroyed the enemy base!" if self.is_victory else "Your base was destroyed!"
-        color = ScreenManager.GREEN if self.is_victory else ScreenManager.RED
+        if self.is_victory is None:
+            title = "BATTLE QUIT"
+            subtitle = "You exited the game early."
+            color = ScreenManager.BLACK
+        elif self.is_victory:
+            title = "VICTORY!"
+            subtitle = "You destroyed the enemy base!"
+            color = ScreenManager.GREEN
+        else:
+            title = "GAME OVER"
+            subtitle = "Your base was destroyed!"
+            color = ScreenManager.RED
         title_surf = font_title.render(title, True, color)
         subtitle_surf = font_sub.render(subtitle, True, ScreenManager.BLACK)
         surface = self.screen_mgr.surface

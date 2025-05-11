@@ -19,6 +19,7 @@ class SettingsWindow:
 
     def quit_game(self, win):
         self.game.running = False
+        self.game.was_forced_quit = True
         win.destroy()
         
     def close_window(self):

@@ -26,8 +26,6 @@ class Tracker:
                     "HeroesDefeated", "MostSpawnedHero", "MostSpawnedCount",
                     "Attack_speed_Buff_Used", "AOE_Used", "GroupHeal_Used"
                 ])
-        else:
-            print(f"[Tracker] CSV exists: {self.csv_filename}")
 
     def log_hero_defeated(self):
         self.heroes_defeated += 1
