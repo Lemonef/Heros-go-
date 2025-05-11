@@ -35,4 +35,4 @@ class SettingsWindow:
         pause_button.pack(pady=10)
 
         tk.Button(win, text="Show Stats", command=self.open_analytics).pack(pady=10)
-        tk.Button(win, text="Quit Game", command=lambda: self.quit_game(win)).pack(pady=10)
+        tk.Button(win, text="End Battle", command=lambda: self.quit_game(win)).pack(pady=10)

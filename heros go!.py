@@ -3,7 +3,6 @@ import random
 import time
 import os
 import csv
-import time
 import tkinter as tk
 from collections import defaultdict
 from settings_window import SettingsWindow
@@ -226,11 +225,9 @@ class GroupHealEffect(SkillEffect):
         self.heal_amount = heal_amount
 
     def apply(self, user, targets):
-        healed = False
         for t in targets:
             if t.alive and t.health < t.max_health:
                 t.health += self.heal_amount
-                healed = True
                 if t.health > t.max_health:
                     t.health = t.max_health
 
@@ -403,7 +400,7 @@ class Hero(Character):
             e for e in enemies
             if e.alive
             and abs(self.x - e.x) <= self.attack_range
-            and abs(self.y - e.y) <= 40   # <-- add vertical check!
+            and abs(self.y - e.y) <= 40
         ]
         enemies_in_front = [e for e in in_range if e.x > self.x and not isinstance(e, BaseTarget)]
 
@@ -561,8 +558,6 @@ class BaseTarget(Character):
     def draw(self, surface):
         self.base.draw(surface)
 
-
-
 class ResourceManager:
     def __init__(self):
         self.energy = 100
@@ -591,105 +586,149 @@ class ResourceManager:
             self.regen_rate += 0.01
             self.upgrade_clicks += 1
             self.last_upgrade_display_time = time.time()
+
+class Button:
+    def __init__(self, rect, label, on_click=None, color=(0, 200, 0), text_color=(0, 0, 0), font_size=24):
+        self.rect = pygame.Rect(rect)
+        self.label = label
+        self.on_click = on_click
+        self.color = color
+        self.text_color = text_color
+        self.font_size = font_size
+        self.enabled = True
+
+    def draw(self, surface):
+        mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
+        current_color = tuple(min(255, c + 30) for c in self.color) if mouse_over and self.enabled else self.color
+
+        # Draw shadow
+        shadow_offset = 4
+        shadow_rect = self.rect.move(shadow_offset, shadow_offset)
+        pygame.draw.rect(surface, (50, 50, 50), shadow_rect, border_radius=5)
+
+        # Main button
+        pygame.draw.rect(surface, current_color, self.rect, border_radius=5)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2, border_radius=5)
+
+        font = pygame.font.SysFont("arial", self.font_size, bold=True)
+        text_surf = font.render(self.label, True, self.text_color)
+        text_rect = text_surf.get_rect(center=self.rect.center)
+        surface.blit(text_surf, text_rect)
+
+    def handle_event(self, event):
+        if not self.enabled or not self.on_click:
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
+            self.on_click()
+
                 
-class UpgradeButton:
+class UpgradeButton(Button):
     def __init__(self, x, y, width=120, height=55):
-        self.rect = pygame.Rect(x, y, width, height)
+        super().__init__((x, y, width, height), label="", font_size=22)
         self.last_upgrade_time = 0
         self.last_fail_time = 0
 
-    def draw(self, surface, font, res_mgr):
-        mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
-        color = (250, 180, 0) if res_mgr.upgrade_clicks < 5 else (150, 150, 150)
-        if mouse_over and res_mgr.upgrade_clicks < 5:
-            color = (255, 210, 50)
+    def update_label(self, res_mgr):
+        if res_mgr.upgrade_clicks >= 5:
+            self.label = "Maxed"
+        elif time.time() - self.last_upgrade_time < 1:
+            self.label = "Upgraded!"
+        elif time.time() - self.last_fail_time < 1:
+            self.label = "Not enough!"
+        else:
+            cost = 20 + 10 * res_mgr.upgrade_clicks
+            self.label = f"Upgrade ({cost})"
 
-        pygame.draw.rect(surface, color, self.rect, border_radius=5)
-        pygame.draw.rect(surface, (0,0,0), self.rect, width=2, border_radius=5)
+    def draw(self, surface, res_mgr):
+        self.update_label(res_mgr)
+        mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
 
         if res_mgr.upgrade_clicks >= 5:
-            label = "Maxed"
-        elif time.time() - self.last_upgrade_time < 1:
-            label = "Upgraded!"
-        elif time.time() - self.last_fail_time < 1:
-            label = "Not enough!"
+            color = (150, 150, 150)
         else:
-            upgrade_cost = 20 + 10 * res_mgr.upgrade_clicks
-            label = f"Upgrade ({upgrade_cost})"
+            color = (250, 180, 0)
+            if mouse_over:
+                color = (255, 210, 50)
 
-        text = font.render(label, True, (0,0,0))
-        text_x = self.rect.x + (self.rect.width - text.get_width()) // 2
-        text_y = self.rect.y + (self.rect.height - text.get_height()) // 2
-        surface.blit(text, (text_x, text_y))
+        pygame.draw.rect(surface, color, self.rect, border_radius=5)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2, border_radius=5)
 
-    def try_click(self, pos, res_mgr):
-        if self.rect.collidepoint(pos) and res_mgr.upgrade_clicks < 5:
+        font = pygame.font.Font(None, 24)
+        label_surf = font.render(self.label, True, (0, 0, 0))
+
+        label_x = self.rect.centerx - label_surf.get_width() // 2
+        label_y = self.rect.centery - label_surf.get_height() // 2
+        surface.blit(label_surf, (label_x, label_y))
+
+
+    def try_click(self, event_pos, res_mgr):
+        if self.rect.collidepoint(event_pos):
             upgrade_cost = 20 + 10 * res_mgr.upgrade_clicks
-            if res_mgr.energy >= upgrade_cost:
+            if res_mgr.energy >= upgrade_cost and res_mgr.upgrade_clicks < 5:
                 res_mgr.upgrade_energy()
                 self.last_upgrade_time = time.time()
             else:
                 self.last_fail_time = time.time()
 
-class HeroButton:
+
+class HeroButton(Button):
     def __init__(self, x, cls, cost, cooldown):
-        self.x = x
         self.cls = cls
         self.cost = cost
-        self.cd = cooldown
+        self.cooldown = cooldown
         self.last = 0
         self.width = 80
         self.height = 55
-        self.rect = pygame.Rect(x, ScreenManager.HEIGHT - 70, self.width, self.height)
+        rect = (x, pygame.display.get_surface().get_height() - 70, self.width, self.height)
+
+        super().__init__(rect=rect, label=cls.__name__, font_size=20)
 
     def is_ready(self):
-        return time.time() - self.last >= self.cd
+        return time.time() - self.last >= self.cooldown
 
-    def brighten(self, color, amount=40):
-        return tuple(min(255, c + amount) for c in color)
-
-    def draw(self, surface, font, res_mgr):
+    def draw(self, surface, res_mgr):
         color_map = {
             'Archer': (0, 200, 0),
             'Warrior': (0, 100, 200),
             'Mage': (150, 0, 200),
             'Healer': (255, 100, 180)
         }
-        base_color = color_map.get(self.cls.__name__, ScreenManager.RED)
-        color = base_color
-
+        base_color = color_map.get(self.cls.__name__, (180, 180, 180))
         ready = self.is_ready() and res_mgr.can_afford(self.cost)
         mouse_over = self.rect.collidepoint(pygame.mouse.get_pos())
 
-        if mouse_over and ready:
-            color = self.brighten(color, 40)
-        elif not ready:
-            color = (150, 150, 150)  # greyed out when on cooldown or can't afford
+        if not ready:
+            color = (150, 150, 150)
+        elif mouse_over:
+            color = tuple(min(255, c + 40) for c in base_color)
+        else:
+            color = base_color
 
         pygame.draw.rect(surface, color, self.rect, border_radius=5)
-        pygame.draw.rect(surface, (0, 0, 0), self.rect, width=2, border_radius=5)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2, border_radius=5)
 
-        # Cooldown bar
-        if not self.is_ready():
-            progress = (time.time() - self.last) / self.cd
-            progress = min(max(progress, 0), 1)
-            cooldown_bar_width = int(self.width * progress)
-            cooldown_bar_rect = pygame.Rect(self.x, self.rect.y, cooldown_bar_width, 5)
-            pygame.draw.rect(surface, (100, 100, 100), cooldown_bar_rect)
-
-        name_text = font.render(self.cls.__name__, True, ScreenManager.BLACK)
+        name_font = pygame.font.Font(None, 24)
         small_font = pygame.font.Font(None, 18)
-        cost_text = small_font.render(f"{self.cost} Energy", True, ScreenManager.BLACK)
 
-        name_x = self.x + (self.width - name_text.get_width()) // 2
-        cost_x = self.x + (self.width - cost_text.get_width()) // 2
+        name_surf = name_font.render(self.cls.__name__, True, (0, 0, 0))
+        cost_surf = small_font.render(f"{self.cost} Energy", True, (0, 0, 0))
 
-        total_text_height = name_text.get_height() + cost_text.get_height() + 4
-        name_y = self.rect.y + (self.height - total_text_height) // 2 + 2
-        cost_y = name_y + name_text.get_height() + 4
+        name_x = self.rect.x + (self.rect.width - name_surf.get_width()) // 2
+        cost_x = self.rect.x + (self.rect.width - cost_surf.get_width()) // 2
 
-        surface.blit(name_text, (name_x, name_y))
-        surface.blit(cost_text, (cost_x, cost_y))
+        total_height = name_surf.get_height() + cost_surf.get_height() + 4
+        name_y = self.rect.y + (self.rect.height - total_height) // 2
+        cost_y = name_y + name_surf.get_height() + 4
+
+        surface.blit(name_surf, (name_x, name_y))
+        surface.blit(cost_surf, (cost_x, cost_y))
+
+        if not self.is_ready():
+            cd_ratio = (time.time() - self.last) / self.cooldown
+            cd_ratio = min(max(cd_ratio, 0), 1)
+            bar_width = int(self.width * cd_ratio)
+            pygame.draw.rect(surface, (100, 100, 100), (self.rect.x, self.rect.y, bar_width, 5))
+
 
     def try_spawn(self, game):
         if self.is_ready() and game.res_mgr.can_afford(self.cost):
@@ -699,22 +738,44 @@ class HeroButton:
             game.tracker.log_energy_spent(self.cost)
             self.last = time.time()
 
-            
 class MainMenu:
     def __init__(self, screen_mgr):
         self.screen_mgr = screen_mgr
-        self.play_button = pygame.Rect(ScreenManager.WIDTH // 2 - 60,
-                                       ScreenManager.HEIGHT // 2 + 100, 120, 55)
-        
+        self.result = None
+
+        self.play_button = Button(
+            rect=(ScreenManager.WIDTH // 2 - 60, ScreenManager.HEIGHT // 2 + 100, 120, 55),
+            label="PLAY",
+            on_click=self.start_game,
+            color=(0, 200, 0)
+        )
+
+        self.quit_button = Button(
+            rect=(ScreenManager.WIDTH - 110, 10, 100, 40),
+            label="QUIT",
+            on_click=self.quit_game,
+            color=(200, 50, 50),
+            text_color=(255, 255, 255),
+            font_size=20
+        )
+
         full_bg = pygame.image.load("assets/Background/Stage3.png").convert()
         cropped_height = full_bg.get_height() - 50
         cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
         self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
 
-    def draw(self):
-        self.screen_mgr.surface.blit(self.background, (0, 0))
+    def start_game(self):
+        self.result = "start"
 
-        # Instruction text  
+    def quit_game(self):
+        pygame.quit()
+        import sys
+        sys.exit()
+
+    def draw(self):
+        surface = self.screen_mgr.surface
+        surface.blit(self.background, (0, 0))
+
         instructions_text = [
             "INSTRUCTIONS:",
             "- Click hero buttons to deploy units (costs energy)",
@@ -724,115 +785,100 @@ class MainMenu:
             "- Destroy enemy base to win!"
         ]
 
-        font_instr = pygame.font.Font(None, 24)
+        font_instr = pygame.font.Font(None, 22)
         title_font = pygame.font.Font(None, 30)
-        start_y = ScreenManager.HEIGHT // 4 - 0
+        start_y = ScreenManager.HEIGHT // 4
 
         for i, line in enumerate(instructions_text):
-            if i == 0:
-                text_surf = title_font.render(line, True, ScreenManager.BLACK)
-            else:
-                text_surf = font_instr.render(line, True, ScreenManager.BLACK)
-            self.screen_mgr.surface.blit(
-                text_surf,
-                (ScreenManager.WIDTH // 2 - text_surf.get_width() // 2,
-                start_y + i * 30)
-            )
+            surf = title_font.render(line, True, ScreenManager.BLACK) if i == 0 else font_instr.render(line, True, ScreenManager.BLACK)
+            surface.blit(surf, (ScreenManager.WIDTH // 2 - surf.get_width() // 2, start_y + i * 30))
 
-        # Draw PLAY button shadow
-        shadow_offset = 4
-        shadow_rect = self.play_button.move(shadow_offset, shadow_offset)
-        pygame.draw.rect(self.screen_mgr.surface, (50, 50, 50), shadow_rect, border_radius=8)
-
-        # Draw PLAY button
-        pygame.draw.rect(self.screen_mgr.surface, (0, 200, 0), self.play_button, border_radius=8)
-        pygame.draw.rect(self.screen_mgr.surface, (0, 0, 0), self.play_button, 2, border_radius=8)
-
-        play_font = pygame.font.Font(None, 32)
-        play_text = play_font.render("PLAY", True, (0, 0, 0))
-        self.screen_mgr.surface.blit(
-            play_text,
-            (self.play_button.centerx - play_text.get_width() // 2,
-            self.play_button.centery - play_text.get_height() // 2)
-        )
-
+        self.play_button.draw(surface)
+        self.quit_button.draw(surface)
         self.screen_mgr.update()
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and self.play_button.collidepoint(event.pos):
-            return "start"
-        return None
-    
+        self.play_button.handle_event(event)
+        self.quit_button.handle_event(event)
+        return self.result
+
+
 class EndScreen:
     def __init__(self, screen_mgr, is_victory):
         self.screen_mgr = screen_mgr
         self.is_victory = is_victory
-        self.button_rect = pygame.Rect(
-            ScreenManager.WIDTH // 2 - 180,
-            ScreenManager.HEIGHT // 2 + 60,
-            160, 60
+        self.result = None
+
+        self.play_again_btn = Button(
+            rect=(ScreenManager.WIDTH // 2 - 180, ScreenManager.HEIGHT // 2 + 40, 160, 60),
+            label="PLAY AGAIN",
+            on_click=self.restart_game,
+            color=(0, 200, 0)
         )
-        self.home_button_rect = pygame.Rect(
-            ScreenManager.WIDTH // 2 + 20,
-            ScreenManager.HEIGHT // 2 + 60,
-            160, 60
+        self.home_btn = Button(
+            rect=(ScreenManager.WIDTH // 2 + 20, ScreenManager.HEIGHT // 2 + 40, 160, 60),
+            label="HOME",
+            on_click=self.go_home,
+            color=(0, 200, 0)
         )
-        
+        self.quit_btn = Button(
+            rect=(ScreenManager.WIDTH // 2 - 80, ScreenManager.HEIGHT // 2 + 120, 160, 50),
+            label="QUIT GAME",
+            on_click=self.quit_game,
+            color=(180, 50, 50),
+            text_color=(255, 255, 255)
+        )
+
         full_bg = pygame.image.load("assets/Background/Stage2.png").convert()
         cropped_height = full_bg.get_height() - 50
         cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
         self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
 
-    def draw(self):
-        self.screen_mgr.surface.blit(self.background, (0, 0))
+    def restart_game(self):
+        self.result = "restart"
 
-        # Title
+    def go_home(self):
+        self.result = "home"
+
+    def quit_game(self):
+        pygame.quit()
+        import sys
+        sys.exit()
+
+    def draw(self):
+        surface = self.screen_mgr.surface
+        surface.blit(self.background, (0, 0))
+
         title_font = pygame.font.Font(None, 60)
         title_text = "VICTORY!" if self.is_victory else "GAME OVER"
         title_color = ScreenManager.GREEN if self.is_victory else ScreenManager.RED
         title_surf = title_font.render(title_text, True, title_color)
-        self.screen_mgr.surface.blit(
+        surface.blit(
             title_surf,
             (ScreenManager.WIDTH // 2 - title_surf.get_width() // 2, ScreenManager.HEIGHT // 3)
         )
 
-        # Subtitle
         sub_font = pygame.font.Font(None, 28)
         sub_text = "You destroyed the enemy base!" if self.is_victory else "Your base was destroyed!"
         sub_surf = sub_font.render(sub_text, True, ScreenManager.BLACK)
-        self.screen_mgr.surface.blit(
+        surface.blit(
             sub_surf,
             (ScreenManager.WIDTH // 2 - sub_surf.get_width() // 2, ScreenManager.HEIGHT // 3 + 50)
         )
 
-        # Button shadow & buttons
-        for rect, label in [
-            (self.button_rect, "PLAY AGAIN"),
-            (self.home_button_rect, "HOME")
-        ]:
-            shadow_offset = 4
-            shadow_rect = rect.move(shadow_offset, shadow_offset)
-            pygame.draw.rect(self.screen_mgr.surface, (50, 50, 50), shadow_rect, border_radius=8)
-            pygame.draw.rect(self.screen_mgr.surface, (0, 200, 0), rect, border_radius=8)
-            pygame.draw.rect(self.screen_mgr.surface, (0, 0, 0), rect, 2, border_radius=8)
-
-            button_font = pygame.font.Font(None, 32)
-            button_surf = button_font.render(label, True, (0, 0, 0))
-            self.screen_mgr.surface.blit(
-                button_surf,
-                (rect.centerx - button_surf.get_width() // 2,
-                 rect.centery - button_surf.get_height() // 2)
-            )
+        self.play_again_btn.draw(surface)
+        self.home_btn.draw(surface)
+        self.quit_btn.draw(surface)
 
         self.screen_mgr.update()
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.button_rect.collidepoint(event.pos):
-                return "restart"
-            if self.home_button_rect.collidepoint(event.pos):
-                return "home"
-        return None
+        self.play_again_btn.handle_event(event)
+        self.home_btn.handle_event(event)
+        self.quit_btn.handle_event(event)
+        return self.result
+
+
 
 class GameManager:
     def __init__(self):
@@ -919,7 +965,13 @@ class GameManager:
         ]
         
         self.upgrade_button = UpgradeButton(520, ScreenManager.HEIGHT - 70, width=160)
-        self.settings_button = pygame.Rect(ScreenManager.WIDTH - 120, 10, 100, 40)
+        self.settings_button = Button(
+            rect=(ScreenManager.WIDTH - 120, 10, 100, 40),
+            label="Settings",
+            on_click=lambda: self.settings.run(),
+            color=(200, 200, 200),
+            font_size=20
+        )
         
         self.paused = False
         self.running = True
@@ -996,11 +1048,13 @@ class GameManager:
     def draw(self):
         sm = self.screen_mgr
         font = pygame.font.Font(None, 24)
+
         sm.surface.blit(self.background, (0, 0))
         self.player_base.draw(sm.surface)
-        self.upgrade_button.draw(sm.surface, font, self.res_mgr)
+        self.upgrade_button.draw(sm.surface, self.res_mgr)
+
         for proj in self.projectiles:
-            proj.draw(self.screen_mgr.surface)
+            proj.draw(sm.surface)
         for h in self.heroes:
             h.draw(sm.surface)
         for e in self.enemies:
@@ -1010,25 +1064,21 @@ class GameManager:
         for e in self.dying_enemies:
             e.draw(sm.surface)
 
-        font = pygame.font.Font(None, 24)
         for btn in self.hero_buttons:
-            btn.draw(sm.surface, font, self.res_mgr)
+            btn.draw(sm.surface, self.res_mgr)
+
         energy_text = f"Energy: {int(self.res_mgr.energy)} / {int(self.res_mgr.max_energy)}"
         energy_render = font.render(energy_text, True, ScreenManager.BLACK)
         sm.surface.blit(energy_render, (10, 10))
 
-        pygame.draw.rect(sm.surface, (200, 200, 200), self.settings_button, border_radius=5)
-        pygame.draw.rect(sm.surface, (0, 0, 0), self.settings_button, 2, border_radius=5)
-        font = pygame.font.Font(None, 24)
-        text = font.render("Settings", True, (0, 0, 0))
-        text_rect = text.get_rect(center=self.settings_button.center)
-        sm.surface.blit(text, text_rect)
+        self.settings_button.draw(sm.surface)
 
-        
         if time.time() - self.res_mgr.last_upgrade_display_time < 1:
             plus_text = font.render("+10", True, (0, 200, 0))
             sm.surface.blit(plus_text, (10 + energy_render.get_width() + 5, 10))
+
         sm.update()
+
         
 
 def main():
@@ -1060,9 +1110,7 @@ def main():
                         b.try_spawn(game)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     game.upgrade_button.try_click(event.pos, game.res_mgr)
-
-                    if game.settings_button.collidepoint(event.pos):
-                        game.settings.run()
+                    game.settings_button.handle_event(event)
 
 
             elif game_state == "end":
