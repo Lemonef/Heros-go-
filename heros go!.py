@@ -737,32 +737,47 @@ class HeroButton(Button):
             game.res_mgr.spend(self.cost)
             game.tracker.log_energy_spent(self.cost)
             self.last = time.time()
-
-class MainMenu:
-    def __init__(self, screen_mgr):
+            
+class Menu:
+    def __init__(self, screen_mgr, bg_image_path):
         self.screen_mgr = screen_mgr
         self.result = None
-
-        self.play_button = Button(
-            rect=(ScreenManager.WIDTH // 2 - 60, ScreenManager.HEIGHT // 2 + 100, 120, 55),
-            label="PLAY",
-            on_click=self.start_game,
-            color=(0, 200, 0)
-        )
-
-        self.quit_button = Button(
-            rect=(ScreenManager.WIDTH - 110, 10, 100, 40),
-            label="QUIT",
-            on_click=self.quit_game,
-            color=(200, 50, 50),
-            text_color=(255, 255, 255),
-            font_size=20
-        )
-
-        full_bg = pygame.image.load("assets/Background/Stage3.png").convert()
+        full_bg = pygame.image.load(bg_image_path).convert()
         cropped_height = full_bg.get_height() - 50
         cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
         self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
+        self.buttons = []
+
+    def draw_background(self):
+        surface = self.screen_mgr.surface
+        surface.blit(self.background, (0, 0))
+
+    def draw_buttons(self):
+        for btn in self.buttons:
+            btn.draw(self.screen_mgr.surface)
+
+    def handle_event(self, event):
+        for btn in self.buttons:
+            btn.handle_event(event)
+        return self.result
+
+    def draw(self):
+        self.draw_background()
+        self.draw_buttons()
+        self.screen_mgr.update()
+
+class MainMenu(Menu):
+    def __init__(self, screen_mgr):
+        super().__init__(screen_mgr, "assets/Background/Stage3.png")
+        self.play_button = Button(
+            rect=(ScreenManager.WIDTH // 2 - 60, ScreenManager.HEIGHT // 2 + 100, 120, 55),
+            label="PLAY", on_click=self.start_game, color=(0, 200, 0)
+        )
+        self.quit_button = Button(
+            rect=(ScreenManager.WIDTH - 110, 10, 100, 40),
+            label="QUIT", on_click=self.quit_game, color=(200, 50, 50), text_color=(255, 255, 255), font_size=20
+        )
+        self.buttons = [self.play_button, self.quit_button]
 
     def start_game(self):
         self.result = "start"
@@ -773,10 +788,9 @@ class MainMenu:
         sys.exit()
 
     def draw(self):
-        surface = self.screen_mgr.surface
-        surface.blit(self.background, (0, 0))
+        super().draw_background()
 
-        instructions_text = [
+        instructions = [
             "INSTRUCTIONS:",
             "- Click hero buttons to deploy units (costs energy)",
             "- Each hero has unique skills and attacks",
@@ -784,55 +798,35 @@ class MainMenu:
             "- Upgrade energy to increase max and regen rate",
             "- Destroy enemy base to win!"
         ]
-
+        font_title = pygame.font.Font(None, 30)
         font_instr = pygame.font.Font(None, 22)
-        title_font = pygame.font.Font(None, 30)
-        start_y = ScreenManager.HEIGHT // 4
+        y_start = ScreenManager.HEIGHT // 4
 
-        for i, line in enumerate(instructions_text):
-            surf = title_font.render(line, True, ScreenManager.BLACK) if i == 0 else font_instr.render(line, True, ScreenManager.BLACK)
-            surface.blit(surf, (ScreenManager.WIDTH // 2 - surf.get_width() // 2, start_y + i * 30))
+        for i, line in enumerate(instructions):
+            font = font_title if i == 0 else font_instr
+            surf = font.render(line, True, ScreenManager.BLACK)
+            self.screen_mgr.surface.blit(surf, (ScreenManager.WIDTH // 2 - surf.get_width() // 2, y_start + i * 30))
 
-        self.play_button.draw(surface)
-        self.quit_button.draw(surface)
+        super().draw_buttons()
         self.screen_mgr.update()
 
-    def handle_event(self, event):
-        self.play_button.handle_event(event)
-        self.quit_button.handle_event(event)
-        return self.result
-
-
-class EndScreen:
+class EndScreen(Menu):
     def __init__(self, screen_mgr, is_victory):
-        self.screen_mgr = screen_mgr
+        super().__init__(screen_mgr, "assets/Background/Stage2.png")
         self.is_victory = is_victory
-        self.result = None
-
         self.play_again_btn = Button(
             rect=(ScreenManager.WIDTH // 2 - 180, ScreenManager.HEIGHT // 2 + 40, 160, 60),
-            label="PLAY AGAIN",
-            on_click=self.restart_game,
-            color=(0, 200, 0)
+            label="PLAY AGAIN", on_click=self.restart_game, color=(0, 200, 0)
         )
         self.home_btn = Button(
             rect=(ScreenManager.WIDTH // 2 + 20, ScreenManager.HEIGHT // 2 + 40, 160, 60),
-            label="HOME",
-            on_click=self.go_home,
-            color=(0, 200, 0)
+            label="HOME", on_click=self.go_home, color=(0, 200, 0)
         )
         self.quit_btn = Button(
             rect=(ScreenManager.WIDTH // 2 - 80, ScreenManager.HEIGHT // 2 + 120, 160, 50),
-            label="QUIT GAME",
-            on_click=self.quit_game,
-            color=(180, 50, 50),
-            text_color=(255, 255, 255)
+            label="QUIT GAME", on_click=self.quit_game, color=(180, 50, 50), text_color=(255, 255, 255)
         )
-
-        full_bg = pygame.image.load("assets/Background/Stage2.png").convert()
-        cropped_height = full_bg.get_height() - 50
-        cropped_bg = full_bg.subsurface(pygame.Rect(0, 0, full_bg.get_width(), cropped_height))
-        self.background = pygame.transform.scale(cropped_bg, (ScreenManager.WIDTH, ScreenManager.HEIGHT))
+        self.buttons = [self.play_again_btn, self.home_btn, self.quit_btn]
 
     def restart_game(self):
         self.result = "restart"
@@ -846,39 +840,23 @@ class EndScreen:
         sys.exit()
 
     def draw(self):
+        super().draw_background()
+
+        font_title = pygame.font.Font(None, 60)
+        font_sub = pygame.font.Font(None, 28)
+        title = "VICTORY!" if self.is_victory else "GAME OVER"
+        subtitle = "You destroyed the enemy base!" if self.is_victory else "Your base was destroyed!"
+        color = ScreenManager.GREEN if self.is_victory else ScreenManager.RED
+
+        title_surf = font_title.render(title, True, color)
+        subtitle_surf = font_sub.render(subtitle, True, ScreenManager.BLACK)
+
         surface = self.screen_mgr.surface
-        surface.blit(self.background, (0, 0))
+        surface.blit(title_surf, (ScreenManager.WIDTH // 2 - title_surf.get_width() // 2, ScreenManager.HEIGHT // 3))
+        surface.blit(subtitle_surf, (ScreenManager.WIDTH // 2 - subtitle_surf.get_width() // 2, ScreenManager.HEIGHT // 3 + 50))
 
-        title_font = pygame.font.Font(None, 60)
-        title_text = "VICTORY!" if self.is_victory else "GAME OVER"
-        title_color = ScreenManager.GREEN if self.is_victory else ScreenManager.RED
-        title_surf = title_font.render(title_text, True, title_color)
-        surface.blit(
-            title_surf,
-            (ScreenManager.WIDTH // 2 - title_surf.get_width() // 2, ScreenManager.HEIGHT // 3)
-        )
-
-        sub_font = pygame.font.Font(None, 28)
-        sub_text = "You destroyed the enemy base!" if self.is_victory else "Your base was destroyed!"
-        sub_surf = sub_font.render(sub_text, True, ScreenManager.BLACK)
-        surface.blit(
-            sub_surf,
-            (ScreenManager.WIDTH // 2 - sub_surf.get_width() // 2, ScreenManager.HEIGHT // 3 + 50)
-        )
-
-        self.play_again_btn.draw(surface)
-        self.home_btn.draw(surface)
-        self.quit_btn.draw(surface)
-
+        super().draw_buttons()
         self.screen_mgr.update()
-
-    def handle_event(self, event):
-        self.play_again_btn.handle_event(event)
-        self.home_btn.handle_event(event)
-        self.quit_btn.handle_event(event)
-        return self.result
-
-
 
 class GameManager:
     def __init__(self):
@@ -1102,6 +1080,7 @@ def main():
                 result = main_menu.handle_event(event)
                 if result == "start":
                     game = GameManager()
+                    main_menu.result = None
                     game_state = "playing"
 
             elif game_state == "playing":
@@ -1120,6 +1099,7 @@ def main():
                     game.tracker.snapshot_data.clear()
                     game_state = "playing"
                 elif result == "home":
+                    main_menu = MainMenu(screen_mgr)
                     game_state = "menu"
 
         # Drawing
