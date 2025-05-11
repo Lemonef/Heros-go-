@@ -1,7 +1,7 @@
 # Battle Heroes Defense
 
 ## Overview
-Battle Heroes Defense is a 2D side-scrolling tower defense game inspired by Line Rangers. Players deploy unique hero units with different stats and skills to defend their base while attacking the enemy's. The game integrates real-time strategy, cooldown and energy systems, AI-controlled enemies, and gameplay analytics.
+Battle Heroes Defense is a 2D side-scrolling tower defense game inspired by *Line Rangers*. Players deploy unique hero units with different stats and skills to defend their base while attacking the enemy's. The game integrates real-time strategy, cooldown and energy systems, AI-controlled enemies, and gameplay analytics.
 
 ## Game Concept
 - Deploy Archer, Warrior, Mage, and Healer units.
@@ -12,9 +12,32 @@ Battle Heroes Defense is a 2D side-scrolling tower defense game inspired by Line
 - Use tactics and timing to defeat the enemy base before losing your own.
 - **Advance Stages** – After each victory, the player can proceed to the next stage where enemies become stronger (increased health), adding difficulty over time.
 
+## How to Run
+1. **Clone this repository**
+```bash
+git clone https://github.com/Lemonef/heros-go-.git
+cd heros-go-
+```
+
+2. **Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+3. **Run the game**
+```bash
+python "heros go!.py"
+```
+
+> On Linux, if you encounter a `tkinter` error:
+```bash
+sudo apt-get install python3-tk
+```
+
 ## UML Diagram
 ```html
-<img src="https://github.com/Lemonef/heros-go-/blob/main/screenshots/uml_diagram.png" alt="UML Diagram" />
+<img src="https://github.com/Lemonef/heros-go-/blob/main/screenshots/UML.png" alt="UML Diagram" />
+<a href="https://lucid.app/lucidchart/6a48afa7-1e3b-480f-ab15-1587b6981417/edit?viewport_loc=-2857%2C-2489%2C7516%2C3896%2C0_0&invitationId=inv_f42b5e9f-a717-4fcb-be57-2f106346f147">UML diagram link</a>
 ```
 
 ## Object-Oriented Design

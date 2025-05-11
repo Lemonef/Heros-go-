@@ -39,6 +39,7 @@ class StatsVisualizer:
         self._plot_energy(notebook)
         self._plot_abilities(notebook)
         self._plot_most_spawned(notebook)
+        self._show_data_table(notebook)
         ttk.Button(self.root, text="Close", command=self.root.destroy).pack(pady=10)
 
     def _plot_enemies_vs_heroes(self, notebook):
@@ -86,3 +87,23 @@ class StatsVisualizer:
         ax.set_ylabel('Hero')
         FigureCanvasTkAgg(fig, frame).get_tk_widget().pack(fill='both', expand=True)
         notebook.add(frame, text="Most Spawned Hero")
+        
+    def _show_data_table(self, notebook):
+        frame = ttk.Frame(notebook)
+        tree = ttk.Treeview(frame)
+        tree.pack(fill='both', expand=True)
+
+        # Read CSV headers
+        columns = list(self.df.columns)
+        tree["columns"] = columns
+        tree["show"] = "headings"
+
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100, anchor="center")
+
+        for _, row in self.df.iterrows():
+            tree.insert("", "end", values=list(row))
+
+        notebook.add(frame, text="Data Table")
+
