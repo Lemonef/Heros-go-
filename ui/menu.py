@@ -92,7 +92,7 @@ class EndScreen(Menu):
 
         if self.is_victory is True:
             self.next_stage_btn = Button(
-                rect=(ScreenManager.WIDTH - 150, 10, 130, 45),
+                rect=(ScreenManager.WIDTH - 200, 10, 180, 45),
                 label="NEXT STAGE",
                 on_click=self.next_stage,
                 color=(0, 150, 250)
