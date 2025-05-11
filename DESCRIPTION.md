@@ -35,10 +35,10 @@ sudo apt-get install python3-tk
 ```
 
 ## UML Diagram
-```html
 ![UML Diagram](screenshots/UML.png)
-<a href="https://lucid.app/lucidchart/6a48afa7-1e3b-480f-ab15-1587b6981417/edit?viewport_loc=-2857%2C-2489%2C7516%2C3896%2C0_0&invitationId=inv_f42b5e9f-a717-4fcb-be57-2f106346f147">UML diagram link</a>
-```
+
+[View editable UML on Lucidchart](https://lucid.app/lucidchart/6a48afa7-1e3b-480f-ab15-1587b6981417/edit?viewport_loc=-2857%2C-2489%2C7516%2C3896%2C0_0&invitationId=inv_f42b5e9f-a717-4fcb-be57-2f106346f147)
+
 
 ## Object-Oriented Design
 | Class | Description |
